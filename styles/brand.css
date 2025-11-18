@@ -1,0 +1,414 @@
+:root {
+  --bg: #f7f4ee;
+  --ink: #222222;
+  --line: #d4cec2;
+  --accent: #111111;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "Courier Prime", monospace;
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+.brand-page {
+  max-width: 720px;
+  margin: 40px auto;
+  padding: 24px;
+}
+
+.brand-header, .brand-form, .brand-summary {
+  text-align: left;
+}
+
+.brand-header {
+  margin-bottom: 48px;
+  text-align: center; /* Centered Title */
+}
+
+.brand-title {
+  font-size: 24px;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.brand-header-line {
+  height: 2px;
+  background: var(--ink);
+  width: 100%;
+}
+
+/* Questions */
+.brand-question-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 24px;
+  position: relative;
+  /* Ensure the row has a stable layout */
+}
+
+.brand-label-container {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  cursor: default; /* Indicate it's interactive-ish */
+}
+
+.brand-star-icon {
+  width: 14px;
+  height: 14px;
+  fill: var(--ink);
+  flex-shrink: 0;
+  transform: translateY(1px);
+}
+
+.brand-label {
+  font-size: 16px;
+  font-weight: 700; /* Bold questions */
+  line-height: 1.4;
+}
+
+.brand-question-line {
+  height: 1px;
+  background: var(--line);
+  width: 100%;
+}
+
+/* ANSWER CONTAINER - HIDDEN BY DEFAULT */
+.brand-answer-container {
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: max-height 0.4s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.3s ease-in-out, margin-top 0.3s ease;
+  margin-top: 0;
+}
+
+/* REVEAL ON HOVER OR FOCUS */
+.brand-question-row:hover .brand-answer-container,
+.brand-question-row:focus-within .brand-answer-container {
+  max-height: 1000px; /* Large enough to fit content */
+  opacity: 1;
+  margin-top: 8px;
+}
+
+/* General Input Styles */
+.brand-question-input {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  background: transparent;
+  font-family: "Courier Prime", monospace;
+  font-size: 16px;
+  outline: none;
+  width: 100%;
+  box-sizing: border-box;
+  color: var(--ink);
+  transition: all 0.2s ease;
+  border-radius: 0; /* Strict square corners */
+}
+
+.brand-question-input:hover {
+  border-color: #999;
+}
+
+.brand-question-input:focus {
+  border-color: var(--ink);
+  background: rgba(255, 255, 255, 0.5); /* Subtle background to separate from bg */
+}
+
+.brand-question-input::placeholder {
+  font-family: "Courier Prime", monospace;
+  color: rgba(34, 34, 34, 0.4);
+  font-style: italic;
+}
+
+/* Custom input styles - ensures consistency */
+.brand-custom-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  margin-top: 8px;
+}
+
+.brand-custom-input {
+  /* Inherits brand-question-input styles automatically, just add overrides if needed */
+  font-style: italic;
+  flex: 1;
+  margin-top: 0; /* Reset margin if present */
+}
+
+.brand-colors-container {
+  display: flex;
+  gap: 8px;
+}
+
+.brand-color-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 42px; /* Match input height approx */
+  width: 42px;
+  border: 1px solid var(--line);
+  background: #fff;
+  padding: 2px;
+  flex-shrink: 0;
+  transition: border-color 0.2s;
+}
+
+.brand-color-wrapper:hover {
+  border-color: var(--ink);
+}
+
+.brand-color-picker {
+  border: none;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  margin: 0;
+  background: none;
+  cursor: pointer;
+}
+
+/* Radio & Checkbox Styles */
+.brand-radio-group, .brand-checkbox-group {
+  display: flex;
+  gap: 24px;
+  padding: 8px 0;
+  flex-wrap: wrap;
+}
+
+.brand-checkbox-group {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.brand-radio-label, .brand-checkbox-label {
+  display: flex;
+  align-items: flex-start; /* Align to top for multiline text */
+  gap: 8px;
+  cursor: pointer;
+  font-size: 16px;
+  transition: opacity 0.2s;
+  user-select: none;
+  line-height: 1.4;
+}
+
+.brand-radio-label:hover .brand-radio-text,
+.brand-checkbox-label:hover .brand-checkbox-text {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+  color: var(--accent);
+}
+
+.brand-checkbox-label.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.brand-checkbox-label.disabled:hover .brand-checkbox-text {
+  text-decoration: none;
+  color: var(--ink);
+}
+
+/* Radio Inputs */
+.brand-radio-label input[type="radio"] {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--ink);
+  border-radius: 50%;
+  outline: none;
+  position: relative;
+  cursor: pointer;
+  margin: 2px 0 0 0; /* Align with text */
+  flex-shrink: 0;
+  transition: transform 0.2s;
+}
+
+.brand-radio-label:hover input[type="radio"] {
+  transform: scale(1.1);
+}
+
+.brand-radio-label input[type="radio"]:checked {
+  background: var(--ink);
+  box-shadow: inset 0 0 0 3px var(--bg);
+  transform: scale(1);
+}
+
+/* Checkbox Inputs (Square brackets style) */
+.brand-checkbox-label input[type="checkbox"] {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--ink);
+  outline: none;
+  position: relative;
+  cursor: pointer;
+  margin: 2px 0 0 0; /* Align with text */
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.2s;
+}
+
+.brand-checkbox-label input[type="checkbox"]:checked::after {
+  content: "x";
+  font-family: "Courier Prime", monospace;
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--ink);
+  line-height: 1;
+}
+
+.brand-radio-text, .brand-checkbox-text {
+  /* Text styling adjustments if needed */
+}
+
+/* Specific override for the font select */
+select.brand-question-input {
+  cursor: pointer;
+  appearance: none; 
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23222' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 16px;
+  padding-right: 36px;
+}
+
+select.brand-question-input:hover {
+  border-color: #666;
+}
+
+/* Button Styles */
+.brand-actions {
+  margin-top: 64px;
+  padding-top: 24px;
+  border-top: 4px double var(--line);
+}
+
+.brand-submit-btn, .brand-edit-btn {
+  padding: 12px 24px;
+  border: 1px solid var(--accent);
+  background: transparent;
+  font-family: "Courier Prime", monospace;
+  font-size: 14px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  cursor: pointer;
+  color: var(--ink);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); /* Snappy mechanical feel */
+  position: relative;
+}
+
+.brand-submit-btn:hover, .brand-edit-btn:hover {
+  background: var(--ink);
+  color: var(--bg);
+  border-color: var(--ink);
+}
+
+.brand-submit-btn:active, .brand-edit-btn:active {
+  transform: translateY(2px);
+}
+
+.brand-submit-btn:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.brand-submit-btn:disabled:hover {
+  background: transparent;
+  color: var(--ink);
+  transform: none;
+}
+
+/* Summary Styles */
+.brand-summary-list {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  margin-bottom: 40px;
+}
+
+.brand-summary-section {
+  margin-bottom: 16px;
+}
+
+.brand-summary-section-title {
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 4px;
+  margin-bottom: 12px;
+  color: #666;
+}
+
+.brand-summary-item {
+  font-size: 15px;
+  line-height: 1.6;
+  margin-bottom: 8px;
+  display: flex;
+  flex-direction: column;
+  padding: 4px 8px;
+  margin-left: -8px;
+  border-radius: 2px;
+  transition: background-color 0.2s ease;
+}
+
+.brand-summary-item:hover {
+  background-color: rgba(0,0,0,0.03);
+}
+
+.brand-summary-label {
+  font-weight: 700;
+  font-size: 13px;
+  opacity: 0.7;
+  margin-bottom: 2px;
+  transition: opacity 0.2s, color 0.2s;
+}
+
+.brand-summary-item:hover .brand-summary-label {
+  opacity: 1;
+  color: var(--ink);
+}
+
+.brand-summary-value {
+  font-size: 16px;
+}
+
+/* PRINT STYLES */
+@media print {
+  body {
+    background-color: #fff;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .brand-page {
+    margin: 0;
+    width: 100%;
+    max-width: 100%;
+    padding: 20px;
+  }
+
+  .brand-actions {
+    display: none !important;
+  }
+
+  /* Ensure text remains readable and high contrast */
+  .brand-title, .brand-summary-section-title {
+    color: #000 !important;
+  }
+  
+  .brand-summary-value {
+    color: #000 !important;
+  }
+}
