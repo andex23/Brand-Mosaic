@@ -6,7 +6,9 @@ interface BrandFormProps {
   formData: BrandFormData;
   setFormData: React.Dispatch<React.SetStateAction<BrandFormData>>;
   onSubmit: () => void;
+  onSaveDraft?: () => void;
   isAnalyzing?: boolean;
+  saveStatus?: 'idle' | 'saving' | 'saved';
 }
 
 // Helper icon for the manual upload row to match BrandQuestionRow style
@@ -20,11 +22,12 @@ const BrandForm: React.FC<BrandFormProps> = ({
   formData,
   setFormData,
   onSubmit,
+  onSaveDraft,
   isAnalyzing = false,
+  saveStatus = 'idle',
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Updated to handle string or string[]
   const handleChange = (name: string, value: string | string[]) => {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
@@ -137,13 +140,13 @@ const BrandForm: React.FC<BrandFormProps> = ({
         name="palette"
         type="select"
         options={[
-          'Milk + Charcoal (Minimal)',
-          'Sand + Terracotta (Earthy)',
-          'Navy + Ice (Corporate/Tech)',
-          'Forest + Clay (Natural)',
-          'Black + Neon (Bold)',
-          'Pastels (Soft)',
-          'Monochrome (Stark)',
+          'Milk + Charcoal',
+          'Sand + Terracotta',
+          'Navy + Ice',
+          'Forest + Clay',
+          'Black + Neon',
+          'Pastels',
+          'Monochrome',
           'Custom'
         ]}
         value={formData.palette}
@@ -178,6 +181,15 @@ const BrandForm: React.FC<BrandFormProps> = ({
         onCustomChange={handleCustomVibe}
         customPlaceholder="Describe the vibe..."
         maxSelections={2}
+      />
+      <BrandQuestionRow
+        label="Mood Board Keywords"
+        subLabel="(Comma separated)"
+        name="moodBoardKeywords"
+        type="input"
+        value={formData.moodBoardKeywords}
+        onChange={handleChange}
+        placeholder="e.g. cinematic, grain, noir, neon, damp"
       />
       <BrandQuestionRow
         label="What typography style do you prefer?"
@@ -337,6 +349,25 @@ const BrandForm: React.FC<BrandFormProps> = ({
       />
 
       <div className="brand-actions">
+        {onSaveDraft && (
+          <div className="brand-save-group">
+            <button
+              type="button"
+              onClick={onSaveDraft}
+              className="brand-edit-btn"
+              disabled={isAnalyzing}
+            >
+              [ SAVE DRAFT ]
+            </button>
+            
+            <span className={`save-status ${saveStatus !== 'idle' ? 'visible' : ''}`}>
+              {saveStatus === 'saving' ? 'Saving...' : 'Draft Saved'}
+            </span>
+          </div>
+        )}
+        
+        <div className="flex-spacer"></div>
+
         <button 
           type="submit" 
           className="brand-submit-btn" 

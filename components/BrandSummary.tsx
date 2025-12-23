@@ -1,18 +1,44 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { BrandFormData } from '../types';
 
 interface BrandSummaryProps {
   formData: BrandFormData;
   onEdit: () => void;
   aiAnalysis?: string;
+  readOnly?: boolean;
 }
 
-const SummarySection: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
-  <div className="brand-summary-section">
-    <div className="brand-summary-section-title">{title}</div>
-    <div>{children}</div>
-  </div>
-);
+const SummarySection: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => {
+  const [isOpen, setIsOpen] = useState(true);
+  return (
+    <div className="brand-summary-section" style={{ marginBottom: '24px' }}>
+      <div 
+        className="brand-summary-section-title" 
+        onClick={() => setIsOpen(!isOpen)}
+        style={{ 
+          fontSize: '14px',
+          textTransform: 'uppercase',
+          letterSpacing: '2px',
+          fontWeight: 700,
+          color: '#666',
+          marginBottom: '16px',
+          cursor: 'pointer',
+          display: 'flex',
+          justifyContent: 'space-between',
+          userSelect: 'none',
+          borderBottom: '1px solid #eee',
+          paddingBottom: '8px'
+        }}
+      >
+        <span>{title}</span>
+        <span className="summary-toggle-icon">{isOpen ? '[-]' : '[+]'}</span>
+      </div>
+      <div className={`brand-summary-body ${isOpen ? '' : 'hidden'}`}>
+        {children}
+      </div>
+    </div>
+  );
+};
 
 const SummaryItem: React.FC<{ label: string; value: React.ReactNode }> = ({ label, value }) => (
   <div className="brand-summary-item">
@@ -21,7 +47,9 @@ const SummaryItem: React.FC<{ label: string; value: React.ReactNode }> = ({ labe
   </div>
 );
 
-const BrandSummary: React.FC<BrandSummaryProps> = ({ formData, onEdit, aiAnalysis }) => {
+const BrandSummary: React.FC<BrandSummaryProps> = ({ formData, onEdit, aiAnalysis, readOnly = false }) => {
+  if (!formData) return null;
+
   // Logic to display custom palette with swatches
   let paletteDisplay: React.ReactNode = formData.palette;
   if (formData.palette === 'Custom') {
@@ -107,6 +135,7 @@ const BrandSummary: React.FC<BrandSummaryProps> = ({ formData, onEdit, aiAnalysi
         <SummarySection title="Visual Direction">
           <SummaryItem label="Palette" value={paletteDisplay} />
           <SummaryItem label="Vibe" value={vibeDisplayStr} />
+          <SummaryItem label="Mood Keywords" value={formData.moodBoardKeywords} />
           <SummaryItem label="Typography" value={typographyDisplay} />
         </SummarySection>
 
@@ -138,14 +167,17 @@ const BrandSummary: React.FC<BrandSummaryProps> = ({ formData, onEdit, aiAnalysi
 
       </div>
 
-      <div className="brand-actions" style={{ display: 'flex', gap: '16px' }}>
-        <button onClick={onEdit} className="brand-edit-btn">
-          [ EDIT ANSWERS ]
-        </button>
-        <button onClick={() => window.print()} className="brand-edit-btn">
-          [ EXPORT PDF ]
-        </button>
-      </div>
+      {!readOnly && (
+        <div className="brand-actions">
+          <button onClick={onEdit} className="brand-edit-btn">
+            [ EDIT ANSWERS ]
+          </button>
+          <div className="flex-spacer" style={{ display: 'none' }}></div>
+          <button onClick={() => window.print()} className="brand-edit-btn">
+            [ EXPORT PDF ]
+          </button>
+        </div>
+      )}
     </div>
   );
 };
