@@ -53,10 +53,18 @@ export interface BrandKit {
   logoPrompt: string;
 }
 
+// Kit section identifiers for lock/regenerate feature
+export type KitSectionId = 'brandEssence' | 'summaryParagraph' | 'keywords' | 'toneOfVoice' | 
+  'brandArchetype' | 'suggestedTagline' | 'colorPaletteSuggestions' | 'fontPairing' | 'logoPrompt';
+
+// Lock state for kit sections
+export type BrandKitLocks = Partial<Record<KitSectionId, boolean>>;
+
 export interface BrandProject {
   id: string;
   name: string;
   createdAt: number;
   formData: BrandFormData;
   brandKit?: BrandKit;
+  kitLocks?: BrandKitLocks;
 }

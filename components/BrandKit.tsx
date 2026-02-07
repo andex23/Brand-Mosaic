@@ -1,7 +1,15 @@
 import React, { useState } from 'react';
-import { BrandKit as BrandKitType, BrandFormData } from '../types';
+import { BrandKit as BrandKitType, BrandFormData, BrandKitLocks, KitSectionId } from '../types';
 import BrandHeader from './BrandHeader';
 import BrandSummary from './BrandSummary';
+import LogoGenerator from './LogoGenerator';
+import LogoDisplay from './LogoDisplay';
+import PaymentModal from './PaymentModal';
+import { useError } from '../hooks/useError';
+import { useUsage } from '../hooks/useUsage';
+import { generateLogo } from '../lib/logoGeneration';
+import { saveLogoToProject } from '../lib/projects';
+import type { User } from '@supabase/supabase-js';
 
 interface BrandKitProps {
   kit: BrandKitType;
@@ -10,12 +18,39 @@ interface BrandKitProps {
   onBackToDashboard: () => void;
   onGoHome: () => void;
   readOnly?: boolean;
+  isFreeTier?: boolean;
+  user: User | null;
+  isLocalMode?: boolean;
+  projectId: string | null;
+  kitLocks?: BrandKitLocks;
+  onToggleLock?: (sectionId: KitSectionId) => void;
+  onRegenerateSection?: (sectionId: KitSectionId) => void;
+  isRegenerating?: boolean;
+  onDuplicate?: () => void;
 }
 
-const BrandKitSection: React.FC<{ title: string; children: React.ReactNode; contentToCopy?: string }> = ({ 
+interface SectionProps {
+  title: string;
+  children: React.ReactNode;
+  contentToCopy?: string;
+  sectionId?: KitSectionId;
+  isLocked?: boolean;
+  onToggleLock?: () => void;
+  onRegenerate?: () => void;
+  isRegenerating?: boolean;
+  canRegenerate?: boolean;
+}
+
+const BrandKitSection: React.FC<SectionProps> = ({ 
   title, 
   children, 
-  contentToCopy 
+  contentToCopy,
+  sectionId,
+  isLocked = false,
+  onToggleLock,
+  onRegenerate,
+  isRegenerating = false,
+  canRegenerate = false,
 }) => {
   const [isOpen, setIsOpen] = useState(true);
 
@@ -23,25 +58,53 @@ const BrandKitSection: React.FC<{ title: string; children: React.ReactNode; cont
     e.stopPropagation();
     if (contentToCopy) {
       navigator.clipboard.writeText(contentToCopy);
-      alert('Copied to clipboard');
+    }
+  };
+
+  const handleLockToggle = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onToggleLock?.();
+  };
+
+  const handleRegenerate = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!isLocked && !isRegenerating) {
+      onRegenerate?.();
     }
   };
 
   return (
-    <div className="kit-section">
-      <div 
-        className="kit-section-header" 
-        onClick={() => setIsOpen(!isOpen)}
-        style={{ cursor: 'pointer', userSelect: 'none' }}
-      >
+    <div className={`kit-section ${isLocked ? 'kit-section-locked' : ''}`}>
+      <div className="kit-section-header" onClick={() => setIsOpen(!isOpen)}>
         <div className="kit-section-title">
-          {title} <span className="kit-toggle-icon" style={{ marginLeft: '8px', opacity: 0.5 }}>{isOpen ? '[-]' : '[+]'}</span>
+          {title} <span className="kit-toggle-icon">{isOpen ? '[-]' : '[+]'}</span>
         </div>
-        {contentToCopy && (
-          <button onClick={handleCopy} className="kit-copy-btn" style={{ fontSize: '10px', background: 'none', border: '1px solid #ccc', cursor: 'pointer', padding: '2px 6px' }}>
-            [ COPY ]
-          </button>
-        )}
+        <div className="kit-section-actions">
+          {onToggleLock && (
+            <button 
+              onClick={handleLockToggle} 
+              className={`kit-lock-btn ${isLocked ? 'locked' : ''}`}
+              title={isLocked ? 'Unlock section' : 'Lock section'}
+            >
+              {isLocked ? '[LOCKED]' : '[LOCK]'}
+            </button>
+          )}
+          {canRegenerate && onRegenerate && (
+            <button 
+              onClick={handleRegenerate} 
+              className="kit-regen-btn"
+              disabled={isLocked || isRegenerating}
+              title={isLocked ? 'Unlock to regenerate' : 'Regenerate this section'}
+            >
+              {isRegenerating ? '[...]' : '[REGEN]'}
+            </button>
+          )}
+          {contentToCopy && (
+            <button onClick={handleCopy} className="kit-copy-btn">
+              [COPY]
+            </button>
+          )}
+        </div>
       </div>
       <div className={`kit-section-body ${isOpen ? '' : 'hidden'}`}>
         {children}
@@ -50,33 +113,109 @@ const BrandKitSection: React.FC<{ title: string; children: React.ReactNode; cont
   );
 };
 
-const BrandKit: React.FC<BrandKitProps> = ({ kit, formData, onEdit, onBackToDashboard, onGoHome, readOnly = false }) => {
+const BrandKit: React.FC<BrandKitProps> = ({ 
+  kit, 
+  formData, 
+  onEdit, 
+  onBackToDashboard, 
+  onGoHome, 
+  readOnly = false,
+  isFreeTier = false,
+  user,
+  isLocalMode = false,
+  projectId,
+  kitLocks = {},
+  onToggleLock,
+  onRegenerateSection,
+  isRegenerating = false,
+  onDuplicate,
+}) => {
   const [isGeneratingLogo, setIsGeneratingLogo] = useState(false);
+  const [generatedLogoUrl, setGeneratedLogoUrl] = useState<string | null>(null);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  
+  const { showError, showSuccess } = useError();
+  const { recordGeneration, refresh } = useUsage(user, isLocalMode);
 
-  const handleGenerateLogo = () => {
+  const handleGenerateLogo = async (options: {
+    prompt: string;
+    style: string;
+    aspectRatio: string;
+  }) => {
+    // Check if feature is available
+    if (isFreeTier && !isLocalMode) {
+      showError('payment/insufficient-credits', {
+        message: 'Logo generation is available for paid users. Please upgrade to continue.',
+      });
+      return;
+    }
+
+    if (!projectId) {
+      showError('unknown', { message: 'Project not found. Please save your brand kit first.' });
+      return;
+    }
+
     setIsGeneratingLogo(true);
-    setTimeout(() => {
+
+    try {
+      // Get API key for logo generation
+      const apiKey = isLocalMode 
+        ? localStorage.getItem('user_gemini_api_key') 
+        : import.meta.env.VITE_GEMINI_API_KEY;
+      
+      const result = await generateLogo({
+        prompt: options.prompt,
+        style: options.style as any,
+        aspectRatio: options.aspectRatio as any,
+        colorPalette: kit.colorPaletteSuggestions?.map(c => c.hex) || [],
+        apiKey: apiKey || undefined,
+      });
+
+      if (result.imageUrl) {
+        setGeneratedLogoUrl(result.imageUrl);
+        
+        // Save logo to project
+        await saveLogoToProject(projectId, result.imageUrl);
+        
+        // Record generation for non-local users
+        if (!isLocalMode && user) {
+          await recordGeneration(projectId, 'server', 'logo');
+        }
+        
+        showSuccess('Logo generated successfully!');
+      } else if (result.error) {
+        throw new Error(result.error);
+      }
+    } catch (error: any) {
+      console.error('Logo generation error:', error);
+      if (error.message?.includes('prompt')) {
+        showError('api/logo-invalid-prompt');
+      } else {
+        showError('api/logo-generation-failed');
+      }
+    } finally {
       setIsGeneratingLogo(false);
-      alert("Logo generation would happen here via Imagen.");
-    }, 1500);
+    }
   };
 
-  const handleShare = () => {
+  const handleShare = async () => {
     const projectData = {
       id: 'shared-brand',
       name: formData.brandName,
       createdAt: Date.now(),
       formData: formData,
-      brandKit: kit
+      brandKit: kit,
+      kitLocks: kitLocks, // Include locks in share payload
     };
 
     try {
       const json = JSON.stringify(projectData);
       const base64 = btoa(encodeURIComponent(json).replace(/%([0-9A-F]{2})/g, (match, p1) => String.fromCharCode(parseInt(p1, 16))));
       const url = `${window.location.origin}${window.location.pathname}?share=${base64}`;
-      navigator.clipboard.writeText(url).then(() => alert("Shareable link copied!"));
+      await navigator.clipboard.writeText(url);
+      showSuccess('Shareable link copied to clipboard!');
     } catch (e) {
-      alert("Share generation failed.");
+      showError('unknown', { message: 'Failed to generate shareable link.' });
     }
   };
 
@@ -92,14 +231,17 @@ const BrandKit: React.FC<BrandKitProps> = ({ kit, formData, onEdit, onBackToDash
             ← HOME
           </button>
         )}
-        <div style={{ display: 'flex', gap: '16px' }}>
-          <button onClick={handleShare} className="nav-link-btn">
-            [ SHARE ]
-          </button>
-          <button onClick={() => window.print()} className="nav-link-btn">
-            [ PRINT ]
-          </button>
-        </div>
+        {/* Hide SHARE/PRINT for read-only shared views */}
+        {!readOnly && (
+          <div className="nav-actions">
+            <button onClick={handleShare} className="nav-link-btn">
+              [SHARE]
+            </button>
+            <button onClick={() => window.print()} className="nav-link-btn">
+              [PRINT]
+            </button>
+          </div>
+        )}
       </div>
 
       <BrandHeader 
@@ -109,43 +251,52 @@ const BrandKit: React.FC<BrandKitProps> = ({ kit, formData, onEdit, onBackToDash
 
       <div className="kit-container">
         
-        <BrandKitSection title="Brand Essence" contentToCopy={kit.brandEssence}>
+        <BrandKitSection 
+          title="Brand Essence" 
+          contentToCopy={kit.brandEssence}
+          sectionId="brandEssence"
+          isLocked={kitLocks.brandEssence}
+          onToggleLock={!readOnly && onToggleLock ? () => onToggleLock('brandEssence') : undefined}
+          onRegenerate={!readOnly && onRegenerateSection ? () => onRegenerateSection('brandEssence') : undefined}
+          isRegenerating={isRegenerating}
+          canRegenerate={!readOnly && !isFreeTier}
+        >
           <div className="kit-essence">{kit.brandEssence}</div>
         </BrandKitSection>
 
         <BrandKitSection title="Summary" contentToCopy={kit.summaryParagraph}>
           <div className="kit-paragraph">{kit.summaryParagraph}</div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '16px' }}>
+          <div className="kit-keywords">
             {kit.keywords?.map((k, i) => (
-              <span key={i} style={{ border: '1px solid var(--line)', padding: '4px 12px', fontSize: '12px', borderRadius: '12px' }}>{k}</span>
+              <span key={i} className="kit-keyword">{k}</span>
             ))}
           </div>
         </BrandKitSection>
 
         <div className="kit-grid">
            <BrandKitSection title="Archetype">
-             <div style={{ fontWeight: 700, marginBottom: '4px' }}>{kit.brandArchetype?.name}</div>
-             <div style={{ fontSize: '14px', opacity: 0.8 }}>{kit.brandArchetype?.explanation}</div>
+             <div className="kit-archetype-name">{kit.brandArchetype?.name}</div>
+             <div className="kit-archetype-desc">{kit.brandArchetype?.explanation}</div>
            </BrandKitSection>
 
            <BrandKitSection title="Tone of Voice">
-             <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '15px' }}>
+             <ul className="kit-tone-list">
                {kit.toneOfVoice?.map((tone, i) => (
-                 <li key={i} style={{ marginBottom: '4px' }}>{tone}</li>
+                 <li key={i}>{tone}</li>
                ))}
              </ul>
            </BrandKitSection>
         </div>
 
         <BrandKitSection title="Color Palette">
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '16px' }}>
+          <div className="kit-colors-grid">
             {kit.colorPaletteSuggestions?.map((color, i) => (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+              <div key={i} className="kit-color-item">
                 <div className="kit-swatch" style={{ backgroundColor: color.hex }}></div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                  <span style={{ fontWeight: 700 }}>{color.name}</span>
-                  <span style={{ fontFamily: 'monospace' }}>{color.hex}</span>
-                  <span style={{ fontSize: '12px', opacity: 0.7, fontStyle: 'italic' }}>{color.usage}</span>
+                <div className="kit-color-info">
+                  <span className="kit-color-name">{color.name}</span>
+                  <span className="kit-color-hex">{color.hex}</span>
+                  <span className="kit-color-usage">{color.usage}</span>
                 </div>
               </div>
             ))}
@@ -154,35 +305,63 @@ const BrandKit: React.FC<BrandKitProps> = ({ kit, formData, onEdit, onBackToDash
 
         <div className="kit-grid">
           <BrandKitSection title="Typography">
-            <div style={{ border: '1px solid var(--line)', padding: '16px', background: 'rgba(255,255,255,0.3)' }}>
-              <div style={{ fontSize: '12px', opacity: 0.7, marginBottom: '4px' }}>Headline</div>
-              <div style={{ fontSize: '18px', fontFamily: 'serif', marginBottom: '12px' }}>{kit.fontPairing?.headlineFont}</div>
-              <div style={{ fontSize: '12px', opacity: 0.7, marginBottom: '4px' }}>Body</div>
-              <div style={{ fontSize: '16px', fontFamily: 'sans-serif' }}>{kit.fontPairing?.bodyFont}</div>
-              <div style={{ marginTop: '12px', fontSize: '11px', fontStyle: 'italic' }}>{kit.fontPairing?.note}</div>
+            <div className="kit-typography-box">
+              <div className="kit-font-label">Headline</div>
+              <div className="kit-font-headline">{kit.fontPairing?.headlineFont}</div>
+              <div className="kit-font-label">Body</div>
+              <div className="kit-font-body">{kit.fontPairing?.bodyFont}</div>
+              <div className="kit-font-note">{kit.fontPairing?.note}</div>
             </div>
           </BrandKitSection>
 
           <BrandKitSection title="Tagline" contentToCopy={kit.suggestedTagline}>
-            <div className="kit-essence" style={{ fontSize: '20px' }}>"{kit.suggestedTagline}"</div>
+            <div className="kit-tagline">"{kit.suggestedTagline}"</div>
           </BrandKitSection>
         </div>
 
-        <BrandKitSection title="Logo Visual Prompt" contentToCopy={kit.logoPrompt}>
-           <div style={{ background: '#fff', padding: '16px', fontSize: '13px', fontFamily: 'monospace', marginBottom: '16px', border: '1px solid var(--line)', lineHeight: '1.6' }}>
-             {kit.logoPrompt}
-           </div>
-           {!readOnly && (
-             <button 
-               onClick={handleGenerateLogo}
-               className="brand-submit-btn"
-               disabled={isGeneratingLogo}
-               style={{ fontSize: '12px', padding: '10px 20px' }}
-             >
-               {isGeneratingLogo ? '[ GENERATING... ]' : '[ GENERATE LOGO PREVIEW ]'}
-             </button>
-           )}
-        </BrandKitSection>
+        {!isFreeTier && kit.logoPrompt && (
+          <BrandKitSection title="Logo Visual Prompt" contentToCopy={kit.logoPrompt}>
+             <div className="kit-logo-prompt">
+               {kit.logoPrompt}
+             </div>
+          </BrandKitSection>
+        )}
+
+        {!readOnly && !isFreeTier && kit.logoPrompt && (
+          <LogoGenerator
+            logoPrompt={kit.logoPrompt}
+            onGenerate={handleGenerateLogo}
+            isGenerating={isGeneratingLogo}
+            disabled={isFreeTier && !isLocalMode}
+          />
+        )}
+
+        {generatedLogoUrl && (
+          <LogoDisplay
+            logoUrl={generatedLogoUrl}
+            onRegenerate={() => {
+              setGeneratedLogoUrl(null);
+            }}
+            onDownload={() => showSuccess('Logo downloaded!')}
+            isGenerating={isGeneratingLogo}
+          />
+        )}
+
+        {isFreeTier && !isLocalMode && (
+          <div className="kit-upgrade-box">
+            <h3 className="kit-upgrade-title">[ UPGRADE TO UNLOCK ]</h3>
+            <p className="kit-upgrade-text">
+              Get access to full brand analysis, logo generation, and more features for just $5.
+            </p>
+            <button 
+              className="brand-submit-btn"
+              onClick={() => setShowPaymentModal(true)}
+              disabled={!user}
+            >
+              [ PURCHASE CREDITS ]
+            </button>
+          </div>
+        )}
 
         <BrandKitSection title="Original Input Recap">
           <BrandSummary formData={formData} onEdit={onEdit} readOnly={readOnly} />
@@ -190,12 +369,28 @@ const BrandKit: React.FC<BrandKitProps> = ({ kit, formData, onEdit, onBackToDash
 
       </div>
 
-      <div className="brand-actions" style={{ marginTop: '56px', justifyContent: 'center' }}>
-        <button onClick={handleShare} className="brand-submit-btn" style={{ width: '100%', maxWidth: '300px' }}>
-          [ COPY SHAREABLE KIT LINK ]
-        </button>
+      <div className="brand-actions kit-actions">
+        {readOnly ? (
+          <button onClick={onDuplicate} className="brand-submit-btn kit-duplicate-btn">
+            [ DUPLICATE THIS KIT ]
+          </button>
+        ) : (
+          <button onClick={handleShare} className="brand-submit-btn kit-share-btn">
+            [ COPY LINK ]
+          </button>
+        )}
       </div>
 
+      {showPaymentModal && user && (
+        <PaymentModal
+          userId={user.id}
+          userEmail={user.email || ''}
+          onSuccess={() => {
+            refresh();
+          }}
+          onClose={() => setShowPaymentModal(false)}
+        />
+      )}
     </div>
   );
 };

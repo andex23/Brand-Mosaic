@@ -1,8 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { BrandProject } from '../types';
 import BrandHeader from './BrandHeader';
-import { auth } from '../firebase';
-import { signOut } from 'firebase/auth';
+import PaymentModal from './PaymentModal';
+import { supabase } from '../lib/supabase';
+import { useUsage } from '../hooks/useUsage';
+import type { User } from '@supabase/supabase-js';
 
 interface DashboardProps {
   projects: BrandProject[];
@@ -13,6 +15,7 @@ interface DashboardProps {
   onGoHome: () => void;
   isLocalMode?: boolean;
   onExitLocal?: () => void;
+  user?: User | null;
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ 
@@ -23,14 +26,18 @@ const Dashboard: React.FC<DashboardProps> = ({
   onDownloadProject,
   onGoHome,
   isLocalMode,
-  onExitLocal
+  onExitLocal,
+  user,
 }) => {
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const { profile, refresh } = useUsage(user || null, isLocalMode);
+  
   const drafts = projects.filter(p => !p.brandKit);
   const completed = projects.filter(p => !!p.brandKit);
 
-  const handleSignOut = () => {
-    if (auth) {
-      signOut(auth).catch(error => console.error("Error signing out", error));
+  const handleSignOut = async () => {
+    if (supabase && !isLocalMode) {
+      await supabase.auth.signOut();
     } else if (onExitLocal) {
       onExitLocal();
     }
@@ -49,58 +56,100 @@ const Dashboard: React.FC<DashboardProps> = ({
 
       <BrandHeader 
         onTitleClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} 
-        subtitle={isLocalMode ? 'Local Project Storage' : 'Your Cloud Brands'}
+        subtitle="Your Brand Workshop"
       />
+
+      {/* Status Header Card */}
+      <div className="dashboard-status-header">
+        <div className="dashboard-status-info">
+          <p className="dashboard-status-label">
+            {isLocalMode ? '◈ LOCAL MODE' : '◈ CLOUD SYNC'}
+          </p>
+          <h3>
+            <strong>{isLocalMode ? 'Local Session' : (user?.email || 'Welcome')}</strong>
+          </h3>
+          {!isLocalMode && (
+            <p className="dashboard-status-sub">
+              {projects.length} project{projects.length !== 1 ? 's' : ''} saved
+            </p>
+          )}
+        </div>
+        
+        {!isLocalMode && profile && (
+          <div className="dashboard-credits">
+            <span className="dashboard-credits-count" style={{ color: profile.available_generations > 0 ? 'var(--ink)' : '#d32f2f' }}>
+              {profile.available_generations === -1 ? '∞' : profile.available_generations}
+            </span>
+            <span className="dashboard-credits-label">
+              {profile.available_generations === -1 ? 'unlimited' : 'credits'}
+            </span>
+            <button
+              onClick={() => setShowPaymentModal(true)}
+              className="nav-link-btn dashboard-purchase-btn"
+              style={{ color: profile.available_generations === 0 ? '#d32f2f' : 'var(--ink)' }}
+            >
+              {profile.available_generations === -1 
+                ? '[ Full Access ]' 
+                : profile.available_generations === 0 
+                  ? '[ Purchase ]' 
+                  : '[ Add More ]'}
+            </button>
+          </div>
+        )}
+        
+        {isLocalMode && (
+          <p className="dashboard-status-local">
+            Using your own API key.<br />
+            Unlimited generations.
+          </p>
+        )}
+      </div>
       
-      <div style={{ textAlign: 'center', marginBottom: '56px' }}>
-        <button onClick={onCreateNew} className="brand-submit-btn" style={{ fontSize: '16px' }}>
+      {/* Create New Button */}
+      <div className="dashboard-create-section">
+        <button onClick={onCreateNew} className="dashboard-create-btn">
           [ + CREATE NEW BRAND ]
         </button>
       </div>
 
+      {/* Drafts Section */}
       <div className="dashboard-section">
-        <div style={{ 
-          fontSize: '12px', 
-          textTransform: 'uppercase', 
-          letterSpacing: '2px', 
-          marginBottom: '24px', 
-          color: '#888',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '12px'
-        }}>
-          <span>DRAFTS</span>
-          <div style={{ height: '1px', background: 'var(--line)', flex: 1 }}></div>
-        </div>
+        <h2 className="dashboard-section-title">
+          <span>✎ DRAFTS</span>
+          <span className="dashboard-section-count">{drafts.length}</span>
+        </h2>
         
         <div className="dashboard-project-list">
           {drafts.length === 0 && (
-            <div style={{ opacity: 0.4, fontStyle: 'italic', padding: '24px', textAlign: 'center' }}>
-              No current drafts.
+            <div className="dashboard-empty">
+              <p className="dashboard-empty-text">No drafts yet</p>
+              <button onClick={onCreateNew} className="nav-link-btn dashboard-empty-btn">
+                Start your first brand →
+              </button>
             </div>
           )}
           {drafts.map(project => (
             <div 
               key={project.id} 
-              className="dashboard-project-item"
+              className="dashboard-project-item dashboard-project-draft"
               onClick={() => onSelectProject(project)}
             >
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <div className="project-info">
                 <span className="project-name">{project.formData.brandName || 'Untitled Draft'}</span>
                 <span className="project-date">Last edit: {new Date(project.createdAt).toLocaleDateString()}</span>
               </div>
-              <div style={{ display: 'flex', gap: '4px' }}>
+              <span className="project-badge project-badge-draft">DRAFT</span>
+              <div className="project-actions">
                 <button 
                   className="project-actions-btn"
                   onClick={(e) => onDownloadProject(project, e)}
                   title="Download"
                 >
-                  [SAVE]
+                  [↓]
                 </button>
                 <button 
-                  className="project-actions-btn"
+                  className="project-actions-btn project-actions-delete"
                   onClick={(e) => onDeleteProject(project.id, e)}
-                  style={{ color: '#d32f2f' }}
                 >
                   [✕]
                 </button>
@@ -110,46 +159,53 @@ const Dashboard: React.FC<DashboardProps> = ({
         </div>
       </div>
 
+      {/* Completed Brand Kits Section */}
       <div className="dashboard-section">
-        <div style={{ 
-            fontSize: '12px', 
-            textTransform: 'uppercase', 
-            letterSpacing: '2px', 
-            marginBottom: '24px', 
-            color: '#888',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '12px'
-          }}>
-            <span>BRAND KITS</span>
-            <div style={{ height: '1px', background: 'var(--line)', flex: 1 }}></div>
-        </div>
+        <h2 className="dashboard-section-title">
+          <span>◆ BRAND KITS</span>
+          <span className="dashboard-section-count">{completed.length}</span>
+        </h2>
 
         <div className="dashboard-project-list">
           {completed.length === 0 && (
-            <div style={{ opacity: 0.4, fontStyle: 'italic', padding: '24px', textAlign: 'center' }}>
-              No completed brand kits yet.
+            <div className="dashboard-empty">
+              <p className="dashboard-empty-text">
+                Complete a brand questionnaire to generate your first kit
+              </p>
             </div>
           )}
           {completed.map(project => (
             <div 
               key={project.id} 
-              className="dashboard-project-item"
+              className="dashboard-project-item dashboard-project-complete"
               onClick={() => onSelectProject(project)}
-              style={{ borderLeft: '3px solid var(--ink)' }}
             >
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <div className="project-info">
                 <span className="project-name">{project.formData.brandName}</span>
-                <span className="project-date">Finalized: {new Date(project.createdAt).toLocaleDateString()}</span>
+                <span className="project-date">Created: {new Date(project.createdAt).toLocaleDateString()}</span>
               </div>
-              <div style={{ display: 'flex', gap: '4px' }}>
-                <button className="project-actions-btn" onClick={(e) => onDownloadProject(project, e)}>[SAVE]</button>
-                <button className="project-actions-btn" onClick={(e) => onDeleteProject(project.id, e)} style={{ color: '#d32f2f' }}>[✕]</button>
+              <span className="project-badge project-badge-complete">COMPLETE</span>
+              <div className="project-actions">
+                <button className="project-actions-btn" onClick={(e) => onDownloadProject(project, e)}>[↓]</button>
+                <button className="project-actions-btn project-actions-delete" onClick={(e) => onDeleteProject(project.id, e)}>[✕]</button>
               </div>
             </div>
           ))}
         </div>
       </div>
+
+      {showPaymentModal && user && (
+        <PaymentModal
+          userId={user.id}
+          userEmail={user.email || ''}
+          currentCredits={profile?.available_generations || 0}
+          onSuccess={() => {
+            refresh();
+            setShowPaymentModal(false);
+          }}
+          onClose={() => setShowPaymentModal(false)}
+        />
+      )}
     </div>
   );
 };

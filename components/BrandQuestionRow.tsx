@@ -177,9 +177,7 @@ const BrandQuestionRow: React.FC<BrandQuestionRowProps> = ({
         <div className="brand-label">
           {label}
           {subLabel && (
-            <span style={{ fontWeight: 400, fontSize: '14px', marginLeft: '8px', opacity: 0.7 }}>
-              {subLabel}
-            </span>
+            <span className="brand-label-hint">{subLabel}</span>
           )}
         </div>
       </div>
