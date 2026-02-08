@@ -40,7 +40,7 @@ export interface GenerationLog {
   project_id?: string;
   api_key_source: 'server' | 'user_provided';
   is_free_tier: boolean;
-  generation_type: 'brand_kit' | 'logo';
+  generation_type: 'brand_kit' | 'logo' | 'scene';
   cost_estimate: number;
   created_at: string;
 }

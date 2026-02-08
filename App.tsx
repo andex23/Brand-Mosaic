@@ -1,8 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Dashboard from './components/Dashboard';
 import BrandFormPage from './components/BrandFormPage';
 import BrandKit from './components/BrandKit';
 import HomePage from './components/HomePage';
+import type { EntryPath } from './components/HomePage';
+import PhotoStudioPage from './components/photo-studio/PhotoStudioPage';
 import ErrorBoundary from './components/ErrorBoundary';
 import ErrorToast from './components/ErrorToast';
 import { BrandFormData, BrandKit as BrandKitType, BrandProject, KitSectionId, BrandKitLocks } from './types';
@@ -42,12 +44,15 @@ const AppContent: React.FC = () => {
   const [isLocalMode, setIsLocalMode] = useState(false);
   
   const [projects, setProjects] = useState<BrandProject[]>([]);
-  const [currentView, setCurrentView] = useState<'home' | 'dashboard' | 'form' | 'kit'>('home');
+  const [currentView, setCurrentView] = useState<'home' | 'dashboard' | 'form' | 'kit' | 'photo-studio'>('home');
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   
   // Ephemeral shared project for anonymous viewers
   const [sharedProject, setSharedProject] = useState<BrandProject | null>(null);
+
+  // Track intended destination from home page path selection
+  const intendedDestination = useRef<EntryPath | null>(null);
 
   const { toasts, showError, showSuccess, removeToast } = useError();
   const { profile, canGenerate, isFreeTier, recordGeneration } = useUsage(user, isLocalMode);
@@ -68,12 +73,13 @@ const AppContent: React.FC = () => {
       setUser(session?.user ?? null);
       setAuthLoading(false);
       if (session?.user) {
-        // Only auto-redirect if user is authenticated with Supabase
         setIsLocalMode(false);
         loadProjectsForUser(session.user.id);
-        setCurrentView('dashboard');
+        // Respect intended destination if set, otherwise dashboard
+        const dest = intendedDestination.current;
+        intendedDestination.current = null;
+        setCurrentView(dest === 'photo-studio' ? 'photo-studio' : 'dashboard');
       } else {
-        // No session, show home page
         setCurrentView('home');
       }
     });
@@ -86,7 +92,10 @@ const AppContent: React.FC = () => {
       if (session?.user) {
         setIsLocalMode(false);
         loadProjectsForUser(session.user.id);
-        setCurrentView('dashboard');
+        // Respect intended destination if set, otherwise dashboard
+        const dest = intendedDestination.current;
+        intendedDestination.current = null;
+        setCurrentView(dest === 'photo-studio' ? 'photo-studio' : 'dashboard');
       } else {
         setProjects([]);
         setIsLocalMode(false);
@@ -510,10 +519,23 @@ Generate ONLY a new brand essence (a single sentence capturing the core identity
   return (
     <>
       <ErrorToast toasts={toasts} onDismiss={removeToast} />
-      {currentView === 'home' && <HomePage onLocalStart={() => { localStorage.setItem('brand_local_user', 'true'); setIsLocalMode(true); setCurrentView('dashboard'); loadProjectsForUser('local-guest'); }} />}
-      {currentView === 'dashboard' && <Dashboard projects={projects} onCreateNew={handleCreateNew} onSelectProject={handleSelectProject} onDeleteProject={(id, e) => { e.stopPropagation(); if (confirm('Delete?')) setProjects(prev => prev.filter(p => p.id !== id)); }} onDownloadProject={(p, e) => { e.stopPropagation(); const blob = new Blob([JSON.stringify(p, null, 2)], { type: 'application/json' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `${p.name}.json`; a.click(); showSuccess('Project downloaded!'); }} onGoHome={() => setCurrentView('home')} isLocalMode={isLocalMode} onExitLocal={() => { localStorage.removeItem('brand_local_user'); setIsLocalMode(false); setCurrentView('home'); }} user={user} />}
+      {currentView === 'home' && <HomePage onLocalStart={(path) => { localStorage.setItem('brand_local_user', 'true'); setIsLocalMode(true); loadProjectsForUser('local-guest'); setCurrentView(path === 'photo-studio' ? 'photo-studio' : 'dashboard'); }} onAuthSuccess={(path) => { intendedDestination.current = path; }} />}
+      {currentView === 'dashboard' && <Dashboard projects={projects} onCreateNew={handleCreateNew} onSelectProject={handleSelectProject} onDeleteProject={(id, e) => { e.stopPropagation(); if (confirm('Delete?')) setProjects(prev => prev.filter(p => p.id !== id)); }} onDownloadProject={(p, e) => { e.stopPropagation(); const blob = new Blob([JSON.stringify(p, null, 2)], { type: 'application/json' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `${p.name}.json`; a.click(); showSuccess('Project downloaded!'); }} onGoHome={() => setCurrentView('home')} isLocalMode={isLocalMode} onExitLocal={() => { localStorage.removeItem('brand_local_user'); setIsLocalMode(false); setCurrentView('home'); }} user={user} onOpenPhotoStudio={() => setCurrentView('photo-studio')} />}
       {currentView === 'form' && <BrandFormPage initialData={activeProject?.formData} onSaveAndAnalyze={handleSaveAndAnalyze} onSaveDraft={handleSaveDraft} onBack={() => setCurrentView('dashboard')} onGoHome={() => setCurrentView('home')} isAnalyzing={isAnalyzing} />}
       {currentView === 'kit' && activeProject?.brandKit && <BrandKit kit={activeProject.brandKit} formData={activeProject.formData} onEdit={() => setCurrentView('form')} onBackToDashboard={() => setCurrentView('dashboard')} onGoHome={() => setCurrentView('home')} readOnly={isViewingShared || activeProject.id.startsWith('shared-')} isFreeTier={!isLocalMode && isFreeTier()} user={user} isLocalMode={isLocalMode} projectId={isViewingShared ? null : currentProjectId} kitLocks={activeProject.kitLocks || {}} onToggleLock={handleToggleLock} onRegenerateSection={handleRegenerateSection} isRegenerating={isRegenerating} onDuplicate={handleDuplicateShared} />}
+      {currentView === 'photo-studio' && (
+        <PhotoStudioPage
+          onBackToDashboard={() => setCurrentView('dashboard')}
+          onGoHome={() => setCurrentView('home')}
+          user={user}
+          isLocalMode={isLocalMode}
+          canGenerate={canGenerate}
+          isFreeTier={isFreeTier}
+          recordGeneration={recordGeneration}
+          showError={showError}
+          showSuccess={showSuccess}
+        />
+      )}
     </>
   );
 };

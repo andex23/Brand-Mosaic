@@ -68,3 +68,76 @@ export interface BrandProject {
   brandKit?: BrandKit;
   kitLocks?: BrandKitLocks;
 }
+
+// ============================================
+// PHOTO STUDIO — Visual Scene Generator Types
+// ============================================
+
+export type SceneType = 'studio' | 'lifestyle' | 'editorial';
+
+export interface SceneConfig {
+  type: SceneType;
+  label: string;
+  description: string;
+  useCase: string;
+  rules: {
+    backgroundStyle: string;
+    lightingStyle: string;
+    compositionStyle: string;
+    propsPolicy: 'none' | 'minimal-contextual' | 'architectural-only';
+    negativePromptAdditions: string[];
+  };
+}
+
+export interface MoodInterpretation {
+  temperature: 'warm' | 'neutral' | 'cool';
+  energy: 'calm' | 'moderate' | 'vibrant';
+  materialBias: string;
+  lightQuality: string;
+  rawInput: string;
+  wasOverridden: boolean;
+  overrideNotes: string[];
+}
+
+export interface ProductInputData {
+  imageBase64: string;
+  /** Additional product images (different angles/views) */
+  additionalImages?: string[];
+  productName: string;
+  sourceType: 'url' | 'upload';
+  sourceUrl?: string;
+  metadata?: {
+    description?: string;
+    price?: string;
+    brand?: string;
+  };
+}
+
+export interface BusinessContextData {
+  businessName: string;
+  businessDescription: string;
+  targetAudience: string;
+  productPurpose: string;
+  brandTone: string;
+}
+
+export interface SceneGenerationRequest {
+  product: ProductInputData;
+  scenes: SceneType[];
+  moodText: string;
+  interpretation: MoodInterpretation;
+  businessContext?: BusinessContextData;
+  brandContext?: {
+    colorPalette?: string[];
+    brandName?: string;
+    visualDirection?: string;
+  };
+}
+
+export interface GeneratedScene {
+  sceneType: SceneType;
+  imageBase64: string;
+  promptUsed: string;
+  generatedAt: number;
+  provider: 'gemini' | 'replicate' | 'pollinations';
+}

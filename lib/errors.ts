@@ -43,12 +43,23 @@ export const ERROR_MESSAGES: Record<string, string> = {
   'validation/required': '✗ This field can\'t be empty.',
   'validation/invalid-api-key': '✗ That doesn\'t look like a valid API key.',
   
+  // Photo Studio Errors
+  'scene/generation-failed': '✗ Scene generation hit a snag. Let\'s try that again.',
+  'scene/scrape-failed': '✗ Couldn\'t fetch product info from that URL. Try uploading an image instead.',
+  'scene/invalid-url': '✗ That URL doesn\'t look right. Check it and try again.',
+  'scene/image-too-large': '✗ Image is too large. Please use an image under 10MB.',
+  'scene/invalid-image': '✗ Couldn\'t read that image. Try JPG, PNG, or WEBP format.',
+  'scene/no-scenes-selected': '✗ Select at least one scene type to generate.',
+  'scene/all-apis-failed': '✗ All image generation services are unavailable. Try again later.',
+
   // Success Messages
   'success/generated': '✓ Brand kit generated successfully!',
   'success/saved': '✓ Saved.',
   'success/copied': '✓ Copied to clipboard.',
   'success/logo-generated': '✓ Logo created!',
-  
+  'success/scene-generated': '✓ Scene photography generated!',
+  'success/product-fetched': '✓ Product info loaded.',
+
   // Generic
   'unknown': '✗ Something unexpected happened. Try again or contact support.',
 };

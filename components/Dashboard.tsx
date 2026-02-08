@@ -16,6 +16,7 @@ interface DashboardProps {
   isLocalMode?: boolean;
   onExitLocal?: () => void;
   user?: User | null;
+  onOpenPhotoStudio?: () => void;
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ 
@@ -28,6 +29,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   isLocalMode,
   onExitLocal,
   user,
+  onOpenPhotoStudio,
 }) => {
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const { profile, refresh } = useUsage(user || null, isLocalMode);
@@ -110,6 +112,26 @@ const Dashboard: React.FC<DashboardProps> = ({
         <button onClick={onCreateNew} className="dashboard-create-btn">
           [ + CREATE NEW BRAND ]
         </button>
+      </div>
+
+      {/* Tools Section */}
+      <div className="dashboard-section">
+        <h2 className="dashboard-section-title">
+          <span>◇ TOOLS</span>
+        </h2>
+        <div className="dashboard-project-list">
+          <div
+            className="dashboard-project-item dashboard-tool-card"
+            onClick={onOpenPhotoStudio}
+            style={{ cursor: 'pointer' }}
+          >
+            <div className="project-info">
+              <span className="project-name">Photo Studio</span>
+              <span className="project-date">Generate product photography scenes — studio, lifestyle, editorial</span>
+            </div>
+            <span className="project-badge project-badge-tool">TOOL</span>
+          </div>
+        </div>
       </div>
 
       {/* Drafts Section */}

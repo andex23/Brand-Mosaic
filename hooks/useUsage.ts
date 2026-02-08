@@ -105,7 +105,7 @@ export const useUsage = (user: User | null, isLocalMode: boolean = false) => {
   const recordGeneration = async (
     projectId: string,
     apiKeySource: 'server' | 'user_provided',
-    generationType: 'brand_kit' | 'logo' = 'brand_kit'
+    generationType: 'brand_kit' | 'logo' | 'scene' = 'brand_kit'
   ): Promise<boolean> => {
     if (isLocalMode) return true; // No tracking in local mode
     if (!user || !profile || !supabase) return false;
