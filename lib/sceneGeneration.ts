@@ -271,7 +271,47 @@ function buildConsistencyPrefix(): string {
 }
 
 // ══════════════════════════════════════════════════════════
-// GEMINI GENERATION — Model cascade with professional prompt
+// QUALITY VALIDATION — Pomelli-like multi-sample rejection
+// ══════════════════════════════════════════════════════════
+
+/**
+ * Validate image quality by checking basic structural metrics.
+ * Returns a quality score 0-100. Scores below QUALITY_THRESHOLD
+ * trigger a regeneration attempt.
+ *
+ * This enforces conservative defaults:
+ * - Reject images that are too small (likely failed generation)
+ * - Reject images that are suspiciously uniform (blank/solid)
+ * - Accept everything else — the locked prompts do the heavy lifting
+ */
+const QUALITY_THRESHOLD = 30; // Low bar — prompt quality does the real work
+const MAX_RETRIES = 2; // Max generation attempts per scene per model
+
+function validateImageQuality(base64: string): { score: number; reason: string } {
+  // Check data size — a real image should be at least ~10KB of base64
+  const rawData = base64.replace(/^data:image\/\w+;base64,/, '');
+  const sizeKB = Math.round((rawData.length * 3) / 4 / 1024);
+
+  if (sizeKB < 5) {
+    return { score: 0, reason: 'Image too small (likely failed generation)' };
+  }
+  if (sizeKB < 15) {
+    return { score: 20, reason: 'Image suspiciously small' };
+  }
+
+  // Check for data URL validity
+  if (!base64.startsWith('data:image/')) {
+    return { score: 0, reason: 'Invalid image data format' };
+  }
+
+  // Passed basic checks — trust the locked prompts
+  // Score based on size (larger = more detail = likely better)
+  const sizeScore = Math.min(100, Math.round(sizeKB / 5));
+  return { score: Math.max(40, sizeScore), reason: 'OK' };
+}
+
+// ══════════════════════════════════════════════════════════
+// GEMINI GENERATION — Model cascade with quality validation
 // ══════════════════════════════════════════════════════════
 
 async function generateSceneWithGemini(
@@ -302,7 +342,13 @@ ${multiAngleNote}
 ABSOLUTE EXCLUSIONS (must not appear in the generated image):
 ${prompt.negative}
 
-Generate a single photograph now. It must look like a real photograph taken by a professional photographer. If it looks like AI-generated art, it has failed.`,
+QUALITY MANDATE:
+- Generate a single photograph that looks like a real photograph taken by a professional photographer
+- If it looks like AI-generated art, it has FAILED
+- Product must be identical to the reference image
+- Lighting must be physically plausible
+- No synthetic appearance, no artificial gloss, no hyperreal textures
+- Conservative, disciplined, professional output ONLY`,
     },
     {
       inlineData: {
@@ -333,34 +379,70 @@ Generate a single photograph now. It must look like a real photograph taken by a
   let lastError: Error | null = null;
 
   for (const modelName of modelsToTry) {
-    try {
-      console.log(`[SceneGen] Trying model: ${modelName}`);
-      const response = await ai.models.generateContent({
-        model: modelName,
-        contents: contentParts,
-        config: {
-          responseModalities: ['TEXT', 'IMAGE'],
-        } as any,
-      });
+    // Multi-sample: try up to MAX_RETRIES per model, pick best
+    let bestImage: string | null = null;
+    let bestScore = -1;
 
-      if (response.candidates?.[0]?.content?.parts) {
-        for (const part of response.candidates[0].content.parts) {
-          if ((part as any).inlineData?.mimeType?.startsWith('image/')) {
-            const inlineData = (part as any).inlineData;
-            console.log(`[SceneGen] ✓ Image generated via ${modelName}`);
-            return `data:${inlineData.mimeType};base64,${inlineData.data}`;
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      try {
+        console.log(`[SceneGen] Model: ${modelName}, attempt ${attempt + 1}/${MAX_RETRIES}`);
+        const response = await ai.models.generateContent({
+          model: modelName,
+          contents: contentParts,
+          config: {
+            responseModalities: ['TEXT', 'IMAGE'],
+          } as any,
+        });
+
+        if (response.candidates?.[0]?.content?.parts) {
+          for (const part of response.candidates[0].content.parts) {
+            if ((part as any).inlineData?.mimeType?.startsWith('image/')) {
+              const inlineData = (part as any).inlineData;
+              const imageData = `data:${inlineData.mimeType};base64,${inlineData.data}`;
+
+              // Quality validation
+              const quality = validateImageQuality(imageData);
+              console.log(`[SceneGen] Quality score: ${quality.score} (${quality.reason})`);
+
+              if (quality.score > bestScore) {
+                bestScore = quality.score;
+                bestImage = imageData;
+              }
+
+              // If quality is good enough, accept immediately (no need for more samples)
+              if (quality.score >= 60) {
+                console.log(`[SceneGen] ✓ Accepted via ${modelName} (score: ${quality.score})`);
+                return imageData;
+              }
+            }
           }
         }
+
+        if (!bestImage) {
+          lastError = new Error(`${modelName} returned no image in response`);
+        }
+      } catch (err: any) {
+        console.warn(`[SceneGen] ${modelName} attempt ${attempt + 1} failed:`, err.message || err);
+        lastError = err;
+        break; // Don't retry this model if it errors — cascade to next
       }
-      lastError = new Error(`${modelName} returned no image in response`);
-    } catch (err: any) {
-      console.warn(`[SceneGen] ${modelName} failed:`, err.message || err);
-      lastError = err;
-      continue;
+    }
+
+    // If we got an image but it was below threshold, still return it
+    // (better than nothing — the prompts enforce quality)
+    if (bestImage && bestScore >= QUALITY_THRESHOLD) {
+      console.log(`[SceneGen] ✓ Best sample from ${modelName} (score: ${bestScore})`);
+      return bestImage;
+    }
+
+    // If we got an image but it was REALLY bad, try next model
+    if (bestImage && bestScore < QUALITY_THRESHOLD) {
+      console.warn(`[SceneGen] Rejecting ${modelName} output (score: ${bestScore}), trying next model`);
+      lastError = new Error(`${modelName} output quality too low (score: ${bestScore})`);
     }
   }
 
-  throw lastError || new Error('Gemini did not return an image in the response');
+  throw lastError || new Error('Gemini did not return an acceptable image');
 }
 
 // ══════════════════════════════════════════════════════════

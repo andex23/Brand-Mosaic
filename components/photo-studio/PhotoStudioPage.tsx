@@ -280,6 +280,7 @@ const PhotoStudioPage: React.FC<PhotoStudioPageProps> = ({
         <SceneResults
           results={results}
           productName={product?.productName || 'Product'}
+          originalImage={product?.imageBase64 || ''}
           onStartOver={handleStartOver}
           onBackToDashboard={onBackToDashboard}
         />

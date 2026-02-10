@@ -2198,84 +2198,177 @@ select.brand-question-input {
   margin-top: 28px;
 }
 
-/* Results Grid */
-.ps-results-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 24px;
+/* ── Results Canvas (wireframe layout) ──────────── */
+
+.ps-canvas {
+  margin-top: 28px;
 }
 
-/* Single scene gets full width */
-.ps-results-grid.ps-results-single {
-  grid-template-columns: 1fr;
-  max-width: 600px;
-  margin: 0 auto;
-}
-
-@media (max-width: 650px) {
-  .ps-results-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-.ps-result-card {
-  border: 1px solid var(--line);
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-}
-
-.ps-result-header {
+/* Canvas Header — product name left, download-all right */
+.ps-canvas-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   height: 28px;
-  margin-bottom: 12px;
+  margin-bottom: 20px;
 }
 
-.ps-result-label {
+.ps-canvas-title {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.ps-canvas-product-name {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 28px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.ps-canvas-count {
   font-size: 11px;
+  line-height: 28px;
+  opacity: 0.35;
+  font-style: italic;
+}
+
+.ps-canvas-download-all {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: 1px solid var(--line);
+  font-family: "Courier Prime", monospace;
+  font-size: 11px;
+  line-height: 28px;
+  height: 28px;
+  padding: 0 12px;
+  color: var(--ink);
+  transition: all 0.15s;
+  letter-spacing: 0.5px;
+}
+
+.ps-canvas-download-all:hover {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--bg);
+}
+
+/* 2x2 Grid — always 2 columns on desktop */
+.ps-canvas-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 2px;
+  background: var(--line);
+  border: 1px solid var(--line);
+}
+
+/* When only 2 cells (original + 1 scene), keep 2-col */
+.ps-canvas-grid-2 {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+/* 3 cells: 2-col, third wraps to fill */
+.ps-canvas-grid-3 {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+/* 4 cells: perfect 2x2 */
+.ps-canvas-grid-4 {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+@media (max-width: 550px) {
+  .ps-canvas-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Individual Cell */
+.ps-canvas-cell {
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+/* Cell Header — label + download icon */
+.ps-canvas-cell-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 10px;
+  height: 28px;
+}
+
+.ps-canvas-cell-label {
+  font-size: 10px;
   line-height: 28px;
   text-transform: uppercase;
   letter-spacing: 2px;
   font-weight: 700;
-  opacity: 0.5;
+  opacity: 0.4;
 }
 
-.ps-result-provider {
-  font-size: 9px;
-  line-height: 28px;
+.ps-canvas-cell-original .ps-canvas-cell-label {
+  opacity: 0.55;
+}
+
+.ps-canvas-cell-download {
+  background: none;
+  border: none;
+  padding: 2px;
+  color: var(--ink);
   opacity: 0.25;
-  text-transform: uppercase;
-}
-
-.ps-result-image-container {
+  transition: opacity 0.15s;
   display: flex;
-  justify-content: center;
   align-items: center;
-  padding: 12px;
-  background: #fff;
-  border: 1px solid var(--line);
-  min-height: 200px;
-  margin-bottom: 12px;
-  flex: 1;
+  justify-content: center;
 }
 
-.ps-result-image {
+.ps-canvas-cell:hover .ps-canvas-cell-download {
+  opacity: 0.6;
+}
+
+.ps-canvas-cell-download:hover {
+  opacity: 1 !important;
+}
+
+/* Cell Image */
+.ps-canvas-cell-image {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #fff;
+  min-height: 200px;
+  padding: 8px;
+}
+
+.ps-canvas-cell-image img {
   max-width: 100%;
-  max-height: 400px;
+  max-height: 320px;
   object-fit: contain;
 }
 
-.ps-results-actions {
+/* Original cell — subtle distinction */
+.ps-canvas-cell-original .ps-canvas-cell-image {
+  background: #fafaf7;
+}
+
+/* Bottom Actions — clean, minimal */
+.ps-canvas-actions {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 24px;
-  margin-top: 56px;
-  flex-wrap: wrap;
+  gap: 28px;
+  margin-top: 28px;
+  height: 28px;
 }
 
+/* Legacy compat */
 .ps-btn-secondary {
   background: transparent !important;
   color: var(--ink) !important;
