@@ -50,7 +50,7 @@ const Dashboard: React.FC<DashboardProps> = ({
 
       <div className="dashboard-status-header">
         <div className="dashboard-status-info">
-          <p className="dashboard-status-label">◈ PRIVATE DASHBOARD</p>
+          <p className="dashboard-status-label">🗂 PRIVATE DASHBOARD</p>
           <h3>
             <strong>{userName || userEmail || 'Brand Workspace'}</strong>
           </h3>
@@ -72,7 +72,7 @@ const Dashboard: React.FC<DashboardProps> = ({
 
       <div className="dashboard-section">
         <h2 className="dashboard-section-title">
-          <span>✎ IN PROGRESS</span>
+          <span>📝 IN PROGRESS</span>
           <span className="dashboard-section-count">{drafts.length}</span>
         </h2>
 
@@ -132,7 +132,7 @@ const Dashboard: React.FC<DashboardProps> = ({
 
       <div className="dashboard-section">
         <h2 className="dashboard-section-title">
-          <span>◆ GENERATED KITS</span>
+          <span>✨ GENERATED KITS</span>
           <span className="dashboard-section-count">{completed.length}</span>
         </h2>
 

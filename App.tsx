@@ -16,8 +16,10 @@ import ErrorBoundary from './components/ErrorBoundary';
 import ErrorToast from './components/ErrorToast';
 import ProjectResultState from './components/ProjectResultState';
 import ProtectedRoute from './components/ProtectedRoute';
+import ThemeToggle from './components/ThemeToggle';
 import { AuthProvider, useAuth } from './hooks/useAuth';
 import { useError } from './hooks/useError';
+import { ThemeProvider } from './hooks/useTheme';
 import {
   BrandAiAttemptFailure,
   BrandAiRequestError,
@@ -384,7 +386,7 @@ const DashboardRoute: React.FC = () => {
   const handleSignOut = async () => {
     try {
       await signOut();
-      navigate('/auth', { replace: true });
+      navigate('/', { replace: true });
     } catch (error) {
       console.error('Failed to sign out:', error);
       showError('unknown', { message: 'Could not sign out right now. Please try again.' });
@@ -606,7 +608,7 @@ const ProjectQuestionsRoute: React.FC = () => {
 
   const handleSignOut = async () => {
     await signOut();
-    navigate('/auth', { replace: true });
+    navigate('/', { replace: true });
   };
 
   return (
@@ -845,7 +847,7 @@ const ProjectResultRoute: React.FC = () => {
 
   const handleSignOut = async () => {
     await signOut();
-    navigate('/auth', { replace: true });
+    navigate('/', { replace: true });
   };
 
   return (
@@ -885,28 +887,33 @@ const AppRoutes: React.FC = () => {
   }
 
   return (
-    <Routes>
-      <Route path="/" element={<Navigate to={user ? '/dashboard' : '/auth'} replace />} />
-      <Route path="/auth" element={<HomePage />} />
-      <Route element={<ProtectedRoute />}>
-        <Route path="/dashboard" element={<DashboardRoute />} />
-        <Route path="/project/:projectId" element={<ProjectIndexRoute />} />
-        <Route path="/project/:projectId/questions" element={<ProjectQuestionsRoute />} />
-        <Route path="/project/:projectId/result" element={<ProjectResultRoute />} />
-      </Route>
-      <Route path="*" element={<Navigate to={user ? '/dashboard' : '/auth'} replace />} />
-    </Routes>
+    <>
+      <ThemeToggle />
+      <Routes>
+        <Route path="/" element={<HomePage />} />
+        <Route path="/auth" element={<Navigate to="/" replace />} />
+        <Route element={<ProtectedRoute />}>
+          <Route path="/dashboard" element={<DashboardRoute />} />
+          <Route path="/project/:projectId" element={<ProjectIndexRoute />} />
+          <Route path="/project/:projectId/questions" element={<ProjectQuestionsRoute />} />
+          <Route path="/project/:projectId/result" element={<ProjectResultRoute />} />
+        </Route>
+        <Route path="*" element={<Navigate to={user ? '/dashboard' : '/'} replace />} />
+      </Routes>
+    </>
   );
 };
 
 const App: React.FC = () => {
   return (
     <ErrorBoundary>
-      <AuthProvider>
-        <BrowserRouter>
-          <AppRoutes />
-        </BrowserRouter>
-      </AuthProvider>
+      <ThemeProvider>
+        <AuthProvider>
+          <BrowserRouter>
+            <AppRoutes />
+          </BrowserRouter>
+        </AuthProvider>
+      </ThemeProvider>
     </ErrorBoundary>
   );
 };

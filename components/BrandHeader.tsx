@@ -16,7 +16,7 @@ const BrandHeader: React.FC<BrandHeaderProps> = ({ onTitleClick, subtitle }) => 
         BRAND MOSAIC
       </div>
       {subtitle && (
-        <div style={{ fontSize: '14px', marginBottom: '8px', opacity: 0.6, fontStyle: 'italic' }}>
+        <div className="brand-subtitle brand-header-subtitle">
           {subtitle}
         </div>
       )}

@@ -166,6 +166,7 @@ const BrandQuestionRow: React.FC<BrandQuestionRowProps> = ({
           onChange={handleChange}
           name={name}
           rows={3}
+          wrap="hard"
           placeholder={placeholder || "Type answer..."}
         />
       );
