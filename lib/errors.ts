@@ -19,13 +19,13 @@ export const ERROR_MESSAGES: Record<string, string> = {
   'auth/invalid-credential': '✗ Email or password is incorrect.',
   
   // API Errors
-  'api/invalid-key': '✗ API key issue. Double-check your Gemini key in settings.',
-  'api/rate-limit': '✗ Whoa, slow down! Too many requests. Wait a moment.',
-  'api/quota-exceeded': '✗ API quota reached. Try again tomorrow or check billing.',
-  'api/generation-failed': '✗ Brand generation hit a snag. Let\'s try that again.',
+  'api/invalid-key': '✗ The configured model provider rejected the API key. Check the provider setup and try again.',
+  'api/rate-limit': '✗ The model provider is rate-limiting requests right now. Wait a moment, then retry.',
+  'api/quota-exceeded': '✗ The configured model provider has no available quota. Add credits or switch providers, then generate again.',
+  'api/generation-failed': '✗ Brand generation stopped before a result was saved. Your workbook draft is still intact.',
   'api/logo-generation-failed': '✗ Logo generation stumbled. Give it another shot.',
   'api/logo-invalid-prompt': '✗ The logo prompt needs tweaking. Try different words.',
-  'api/key-not-found': '✗ No API key found. Add your Gemini key to continue.',
+  'api/key-not-found': '✗ No brand generation API key is configured. Add an OpenAI or Gemini key to continue.',
   
   // Payment Errors
   'payment/failed': '✗ Payment didn\'t go through. Try again or contact support.',
@@ -83,4 +83,3 @@ export const getErrorMessage = (errorCode: string, options?: ErrorOptions): stri
 export const generateToastId = (): string => {
   return `toast-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 };
-

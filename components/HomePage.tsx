@@ -1,78 +1,54 @@
 import React, { useState } from 'react';
+import { Navigate } from 'react-router-dom';
 import BrandHeader from './BrandHeader';
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import ErrorMessage from './ErrorMessage';
+import { useAuth } from '../hooks/useAuth';
 
-export type EntryPath = 'brand' | 'photo-studio';
-
-interface HomePageProps {
-  onLocalStart: (path?: EntryPath) => void;
-  onAuthSuccess?: (path: EntryPath) => void;
-}
-
-const HomePage: React.FC<HomePageProps> = ({ onLocalStart, onAuthSuccess }) => {
-  // Path selection
-  const [selectedPath, setSelectedPath] = useState<EntryPath | null>(null);
-
-  // Auth state
+const HomePage: React.FC = () => {
+  const { user, isConfigured, signIn, signUp } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [fullName, setFullName] = useState('');
   const [isSignUp, setIsSignUp] = useState(true);
   const [error, setError] = useState('');
+  const [info, setInfo] = useState('');
   const [loading, setLoading] = useState(false);
-  const [showApiKeyInput, setShowApiKeyInput] = useState(false);
-  const [apiKey, setApiKey] = useState('');
-  const [showApiKeyValue, setShowApiKeyValue] = useState(false);
 
-  const isCloudEnabled = isSupabaseConfigured();
+  if (user) {
+    return <Navigate to="/dashboard" replace />;
+  }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
     setError('');
+    setInfo('');
     setLoading(true);
-
-    if (!supabase) {
-      setError("Cloud Sync is unavailable. Please use the local session below.");
-      setLoading(false);
-      return;
-    }
 
     try {
       if (isSignUp) {
-        const { data, error: signUpError } = await supabase.auth.signUp({
+        await signUp({
           email,
           password,
+          fullName,
         });
-        if (signUpError) throw signUpError;
-        if (data.user && !data.session) {
-          setError('Please check your email to confirm your account.');
-        }
-      } else {
-        const { error: signInError } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
-        if (signInError) throw signInError;
-      }
 
-      // Signal the intended path to App.tsx
-      if (selectedPath && onAuthSuccess) {
-        onAuthSuccess(selectedPath);
+        setInfo('Account created. If email confirmation is enabled, confirm your inbox and then sign in.');
+      } else {
+        await signIn({ email, password });
       }
     } catch (err: any) {
       console.error('Auth error:', err);
+
       if (err.message?.includes('Invalid login credentials')) {
         setError('Invalid email or password.');
       } else if (err.message?.includes('Email not confirmed')) {
-        setError('Please confirm your email address.');
+        setError('Please confirm your email address before signing in.');
       } else if (err.message?.includes('User already registered')) {
         setError('An account with this email already exists.');
       } else if (err.message?.includes('Password should be at least')) {
         setError('Password should be at least 6 characters.');
       } else if (err.message?.includes('Unable to validate email')) {
         setError('Please enter a valid email address.');
-      } else if (err.message?.includes('email') && err.message?.includes('send')) {
-        setError('Email service error. Check Supabase SMTP settings.');
       } else {
         setError(err.message || 'Authentication failed.');
       }
@@ -81,251 +57,135 @@ const HomePage: React.FC<HomePageProps> = ({ onLocalStart, onAuthSuccess }) => {
     }
   };
 
-  const toggleMode = () => {
-    setIsSignUp(!isSignUp);
-    setError('');
-    setPassword('');
-  };
-
-  const isValidApiKeyFormat = (key: string): boolean => {
-    return key.trim().length > 20 && key.startsWith('AIza');
-  };
-
-  const handleLocalStart = () => {
-    if (showApiKeyInput) {
-      if (!apiKey.trim()) {
-        setError('Please enter your Gemini API key to use local mode.');
-        return;
-      }
-      if (!isValidApiKeyFormat(apiKey)) {
-        setError('Invalid API key format. Gemini API keys start with "AIza".');
-        return;
-      }
-      localStorage.setItem('user_gemini_api_key', apiKey);
-      onLocalStart(selectedPath || 'brand');
-    } else {
-      setShowApiKeyInput(true);
-    }
-  };
-
-  const handleBackToPathSelection = () => {
-    setSelectedPath(null);
-    setShowApiKeyInput(false);
-    setApiKey('');
-    setError('');
-    setEmail('');
-    setPassword('');
-  };
-
-  // ── LANDING VIEW: Path Selection ──────────────────
-
-  if (!selectedPath) {
-    return (
-      <div className="home-wrapper notepad-bg">
-        <div className="brand-page home-container">
-          <BrandHeader />
-
-          <div className="home-hero">
-            <div className="home-tagline">"Create with intention."</div>
-            <div className="home-description">
-              Brand identity and product photography<br />
-              — in one quiet, opinionated space.
-            </div>
-          </div>
-
-          {/* Two Path Selectors */}
-          <div className="home-path-grid">
-            <div
-              className="home-path-card"
-              onClick={() => setSelectedPath('brand')}
-            >
-              <div className="home-path-icon">&#9670;</div>
-              <div className="home-path-label">Brand Mosaic</div>
-              <div className="home-path-desc">
-                Shape your brand identity — tone, palette, typography,
-                archetype. Answer questions, get a complete brand kit.
-              </div>
-              <div className="home-path-features">
-                <span>&#8594; Brand questionnaire</span>
-                <span>&#8594; AI brand kit generation</span>
-                <span>&#8594; Visual direction & tone</span>
-                <span>&#8594; Logo prompt</span>
-              </div>
-              <div className="home-path-cta">[ START YOUR BRAND ]</div>
-            </div>
-
-            <div
-              className="home-path-card"
-              onClick={() => setSelectedPath('photo-studio')}
-            >
-              <div className="home-path-icon">&#9671;</div>
-              <div className="home-path-label">Photo Studio</div>
-              <div className="home-path-desc">
-                Generate product photography scenes — studio, lifestyle,
-                editorial. Upload a product, pick scenes, get images.
-              </div>
-              <div className="home-path-features">
-                <span>&#8594; Product image upload</span>
-                <span>&#8594; 3 scene types</span>
-                <span>&#8594; Mood interpretation</span>
-                <span>&#8594; Brand-grade output</span>
-              </div>
-              <div className="home-path-cta">[ OPEN PHOTO STUDIO ]</div>
-            </div>
-          </div>
-
-          <div className="home-footer">
-            <div className="home-footer-note">
-              Both tools work together or independently.
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // ── AUTH VIEW: Sign In / Sign Up / Local ──────────
-
-  const pathLabel = selectedPath === 'brand' ? 'Brand Mosaic' : 'Photo Studio';
-
   return (
     <div className="home-wrapper notepad-bg">
       <div className="brand-page home-container">
-        <BrandHeader subtitle={pathLabel} />
+        <BrandHeader subtitle="Private brand workbooks for founders and teams" />
 
         <div className="home-hero">
-          <div className="home-tagline">
-            {selectedPath === 'brand'
-              ? '"Brand identity without the noise."'
-              : '"Product photography, restaged by AI."'}
-          </div>
+          <div className="home-tagline">"Work through your brand. Keep every draft in one place."</div>
           <div className="home-description">
-            {selectedPath === 'brand'
-              ? <>A soft, quiet space to shape who<br />your brand is and how it feels.</>
-              : <>Upload a product, pick scenes, add mood.<br />The system handles the rest.</>}
+            Brand Mosaic is a guided branding workbook for founders, creatives, and small teams who
+            need sharper brand direction before they design, write, or ship.
+          </div>
+          <div className="home-supporting-note">
+            Each account gets a private dashboard with saved workbooks, questionnaire answers, and
+            generated brand results tied to that user only.
           </div>
         </div>
 
-        {!showApiKeyInput ? (
-          <form className="home-action-area" onSubmit={handleSubmit}>
-            <input
-              type="email"
-              className="home-email-input"
-              placeholder="email address"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              disabled={loading}
-            />
-
-            <input
-              type="password"
-              className="home-email-input"
-              placeholder="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              disabled={loading}
-            />
-
-            {error && <ErrorMessage message={error} />}
-
-            <button
-              type="submit"
-              className="brand-submit-btn home-start-btn"
-              disabled={loading || !isCloudEnabled}
-              style={{ opacity: isCloudEnabled ? 1 : 0.5 }}
-            >
-              {loading
-                ? '...'
-                : isSignUp
-                ? '[ CREATE ACCOUNT → ]'
-                : '[ SIGN IN → ]'}
-            </button>
-          </form>
-        ) : (
-          <div className="home-action-area">
-            <div className="local-mode-header">
-              <strong>Local Mode</strong>
-              <p className="local-mode-desc">
-                Enter your Google Gemini API key to use locally without cloud sync.
-              </p>
+        <div className="home-process-board">
+          <div className="home-process-title">How it works</div>
+          <div className="home-process-steps">
+            <div className="home-process-step">
+              <span>01</span>
+              <p>Answer questions about your brand</p>
             </div>
-
-            <div className="api-key-input-wrap">
-              <input
-                type={showApiKeyValue ? 'text' : 'password'}
-                className="home-email-input"
-                placeholder="your gemini api key (AIza...)"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                autoComplete="off"
-              />
-              <button
-                type="button"
-                className="api-key-toggle"
-                onClick={() => setShowApiKeyValue(!showApiKeyValue)}
-                title={showApiKeyValue ? 'Hide key' : 'Show key'}
-              >
-                {showApiKeyValue ? '[ HIDE ]' : '[ SHOW ]'}
-              </button>
+            <div className="home-process-step">
+              <span>02</span>
+              <p>Let Brand Mosaic synthesize the full picture</p>
             </div>
-
-            {error && <ErrorMessage message={error} />}
-
-            <button
-              onClick={handleLocalStart}
-              className="brand-submit-btn home-start-btn"
-            >
-              [ START LOCAL SESSION → ]
-            </button>
-
-            <button
-              onClick={() => { setShowApiKeyInput(false); setApiKey(''); setError(''); }}
-              className="nav-link-btn home-back-btn"
-            >
-              ← BACK TO SIGN IN
-            </button>
+            <div className="home-process-step">
+              <span>03</span>
+              <p>Review, return, and export your saved direction</p>
+            </div>
           </div>
-        )}
+        </div>
 
-        {!showApiKeyInput && (
-          <>
-            <div className="home-features">
-              {selectedPath === 'brand' ? (
-                <>
-                  <div className="home-feature-item">→ Thoughtful questions</div>
-                  <div className="home-feature-item">→ Clean brand summary</div>
-                  <div className="home-feature-item">→ Visual identity & tone mapping</div>
-                </>
-              ) : (
-                <>
-                  <div className="home-feature-item">→ Studio, lifestyle, editorial scenes</div>
-                  <div className="home-feature-item">→ Mood-driven scene interpretation</div>
-                  <div className="home-feature-item">→ Download-ready product imagery</div>
-                </>
-              )}
-            </div>
+        <div className="home-workbook-card">
+          <div className="home-workbook-title">What your workbook captures</div>
+          <div className="home-workbook-list">
+            <div className="home-workbook-item">→ A clear brand essence and positioning summary</div>
+            <div className="home-workbook-item">→ Voice, personality, and messaging direction</div>
+            <div className="home-workbook-item">→ Visual notes for palette, typography, and imagery</div>
+            <div className="home-workbook-item">→ Persistent project history you can resume later</div>
+          </div>
+        </div>
 
-            <div className="home-footer">
-              {isCloudEnabled ? (
-                <button onClick={toggleMode} className="nav-link-btn">
-                  {isSignUp ? 'Already have an account? Sign In' : 'New here? Create Account'}
-                </button>
-              ) : (
-                <p className="home-cloud-disabled">Cloud sync is disabled.</p>
-              )}
+        <div className="home-access-guide">
+          <div className="home-access-guide-title">Before you begin</div>
+          <div className="home-access-guide-list">
+            <span>→ Sign in to keep each workbook private to your account.</span>
+            <span>→ Your brand answers, results, and exports stay tied to the projects you own.</span>
+            <span>→ Brand generation runs through the app’s server-side OpenAI → Gemini provider chain.</span>
+          </div>
+        </div>
 
-              <button onClick={handleLocalStart} className="nav-link-btn">
-                CONTINUE WITHOUT CLOUD SYNC
-              </button>
+        <form className="home-action-area" onSubmit={handleSubmit}>
+          <div className="home-form-title">
+            {isSignUp ? 'Create your private dashboard' : 'Return to your workbooks'}
+          </div>
+          <div className="home-form-note">
+            {isSignUp
+              ? 'Start with email and password. Your projects, answers, and results will stay under your account.'
+              : 'Sign in to continue drafting, generating, and exporting your saved brand work.'}
+          </div>
 
-              <button onClick={handleBackToPathSelection} className="nav-link-btn home-switch-path">
-                ← Choose a different tool
-              </button>
-            </div>
-          </>
-        )}
+          {isSignUp && (
+            <input
+              type="text"
+              className="home-email-input"
+              placeholder="full name (optional)"
+              value={fullName}
+              onChange={(event) => setFullName(event.target.value)}
+              disabled={loading}
+            />
+          )}
+
+          <input
+            type="email"
+            className="home-email-input"
+            placeholder="email address"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            required
+            disabled={loading}
+          />
+
+          <input
+            type="password"
+            className="home-email-input"
+            placeholder="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            required
+            disabled={loading}
+          />
+
+          {error && <ErrorMessage message={error} />}
+          {info && <div className="home-inline-note">{info}</div>}
+
+          <button
+            type="submit"
+            className="brand-submit-btn home-start-btn"
+            disabled={loading || !isConfigured}
+            style={{ opacity: isConfigured ? 1 : 0.5 }}
+          >
+            {loading
+              ? '[ WORKING... ]'
+              : isSignUp
+                ? '[ CREATE ACCOUNT ]'
+                : '[ SIGN IN ]'}
+          </button>
+        </form>
+
+        <div className="home-features">
+          <div className="home-feature-item">→ Private per-user workbooks</div>
+          <div className="home-feature-item">→ Autosaved questionnaire progress</div>
+          <div className="home-feature-item">→ Saved brand results and export history</div>
+        </div>
+
+        <div className="home-footer">
+          {isConfigured ? (
+            <button onClick={() => setIsSignUp((current) => !current)} className="nav-link-btn">
+              {isSignUp ? 'Already have an account? Sign In' : 'New here? Create Account'}
+            </button>
+          ) : (
+            <p className="home-cloud-disabled">
+              Supabase is not configured. Add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` to enable accounts.
+            </p>
+          )}
+        </div>
       </div>
     </div>
   );

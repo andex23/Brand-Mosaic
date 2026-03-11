@@ -1,98 +1,98 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import BrandHeader from './BrandHeader';
 import BrandForm from './BrandForm';
-import { BrandFormData } from '../types';
+import GenerationStatusCard from './GenerationStatusCard';
+import { BrandFormData, GenerationStatusNotice } from '../types';
+import { defaultBrandFormData } from '../lib/brandWorkbook';
 
 interface BrandFormPageProps {
   initialData?: BrandFormData;
-  onSaveAndAnalyze: (data: BrandFormData) => void;
-  onSaveDraft: (data: BrandFormData, exit?: boolean) => void;
+  projectName?: string;
+  onSaveAndAnalyze: (data: BrandFormData) => Promise<void>;
+  onSaveDraft: (data: BrandFormData) => Promise<void>;
   onBack: () => void;
-  onGoHome: () => void;
+  onSignOut: () => void;
   isAnalyzing: boolean;
+  generationStatus: GenerationStatusNotice;
+  onDismissGenerationStatus: () => void;
 }
 
-const defaultFormData: BrandFormData = {
-  brandName: '',
-  offering: '',
-  purpose: '',
-  problem: '',
-  tone: [],
-  feeling: '',
-  adjectives: '',
-  palette: '',
-  customPalette: '',
-  customColor1: '#000000',
-  customColor2: '#ffffff',
-  vibe: [],
-  customVibe: '',
-  moodBoardKeywords: '',
-  typography: '',
-  customFont: '',
-  audience: [],
-  customerCare: '',
-  differentiation: '',
-  competitors: '',
-  tagline: '',
-  logoExists: '',
-  logoPreference: '',
-  fashion: '',
-  soundtrack: '',
-  inspiration: '',
-};
-
-const BrandFormPage: React.FC<BrandFormPageProps> = ({ 
-  initialData, 
+const BrandFormPage: React.FC<BrandFormPageProps> = ({
+  initialData,
+  projectName,
   onSaveAndAnalyze,
   onSaveDraft,
   onBack,
-  onGoHome,
-  isAnalyzing
+  onSignOut,
+  isAnalyzing,
+  generationStatus,
+  onDismissGenerationStatus,
 }) => {
-  const [formData, setFormData] = useState<BrandFormData>(defaultFormData);
-  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [formData, setFormData] = useState<BrandFormData>(defaultBrandFormData);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'dirty' | 'saving' | 'saved' | 'error'>('idle');
+  const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
   const hasInitialized = useRef(false);
-  const lastSavedData = useRef<BrandFormData>(initialData || defaultFormData);
+  const lastSavedData = useRef<BrandFormData>(initialData || defaultBrandFormData);
+  const isSavingRef = useRef(false);
 
   useEffect(() => {
-    if (initialData && !hasInitialized.current) {
-      setFormData(initialData);
-      lastSavedData.current = initialData;
-      hasInitialized.current = true;
-    } else if (!initialData && !hasInitialized.current) {
-       hasInitialized.current = true;
+    if (hasInitialized.current) return;
+
+    const resolvedData = initialData || defaultBrandFormData;
+    setFormData(resolvedData);
+    lastSavedData.current = resolvedData;
+    hasInitialized.current = true;
+  }, [initialData]);
+
+  useEffect(() => {
+    if (!hasInitialized.current) return;
+    if (JSON.stringify(formData) !== JSON.stringify(lastSavedData.current) && !isSavingRef.current) {
+      setSaveStatus((current) => (current === 'saving' ? current : 'dirty'));
     }
-  }, []);
 
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (JSON.stringify(formData) !== JSON.stringify(lastSavedData.current)) {
-        setSaveStatus('saving');
-        onSaveDraft(formData, false);
+    const timer = setTimeout(async () => {
+      if (isSavingRef.current) return;
+      if (JSON.stringify(formData) === JSON.stringify(lastSavedData.current)) return;
+
+      isSavingRef.current = true;
+      setSaveStatus('saving');
+
+      try {
+        await onSaveDraft(formData);
         lastSavedData.current = formData;
-        setTimeout(() => {
-          setSaveStatus('saved');
-          setTimeout(() => setSaveStatus('idle'), 2000);
-        }, 600);
+        setLastSavedAt(new Date().toISOString());
+        setSaveStatus('saved');
+      } catch {
+        setSaveStatus('error');
+      } finally {
+        isSavingRef.current = false;
       }
-    }, 3000); // 3 second debounce for autosave
+    }, 1800);
 
     return () => clearTimeout(timer);
   }, [formData, onSaveDraft]);
 
-  const handleFormSubmit = () => {
+  const handleFormSubmit = async () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
-    onSaveAndAnalyze(formData);
+    await onSaveAndAnalyze(formData);
   };
 
-  const handleManualSave = () => {
+  const handleManualSave = async () => {
+    if (isSavingRef.current) return;
+
+    isSavingRef.current = true;
     setSaveStatus('saving');
-    onSaveDraft(formData, false);
-    lastSavedData.current = formData;
-    setTimeout(() => {
-        setSaveStatus('saved');
-        setTimeout(() => setSaveStatus('idle'), 2000);
-    }, 500);
+
+    try {
+      await onSaveDraft(formData);
+      lastSavedData.current = formData;
+      setLastSavedAt(new Date().toISOString());
+      setSaveStatus('saved');
+    } catch {
+      setSaveStatus('error');
+    } finally {
+      isSavingRef.current = false;
+    }
   };
 
   return (
@@ -101,23 +101,30 @@ const BrandFormPage: React.FC<BrandFormPageProps> = ({
         <button onClick={onBack} className="nav-link-btn">
           ← DASHBOARD
         </button>
-        <button onClick={onGoHome} className="nav-link-btn">
-          [ EXIT TO HOME ]
+        <button onClick={onSignOut} className="nav-link-btn">
+          [ SIGN OUT ]
         </button>
       </div>
-      
-      <BrandHeader 
-        onTitleClick={onBack} 
-        subtitle={formData.brandName ? `Editing: ${formData.brandName}` : 'Defining your identity'}
+
+      <BrandHeader
+        onTitleClick={onBack}
+        subtitle={projectName || formData.brandName ? `Editing: ${projectName || formData.brandName}` : 'Defining your identity'}
       />
-      
+
+      <GenerationStatusCard
+        status={generationStatus}
+        onDismiss={onDismissGenerationStatus}
+      />
+
       <BrandForm
         formData={formData}
         setFormData={setFormData}
         onSubmit={handleFormSubmit}
         onSaveDraft={handleManualSave}
         isAnalyzing={isAnalyzing}
+        generationPhase={generationStatus.phase}
         saveStatus={saveStatus}
+        lastSavedAt={lastSavedAt}
       />
     </div>
   );

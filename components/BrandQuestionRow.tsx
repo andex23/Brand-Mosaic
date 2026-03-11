@@ -4,11 +4,12 @@ interface BrandQuestionRowProps {
   label: string;
   subLabel?: string;
   name: string;
-  type: 'input' | 'select' | 'radio' | 'checkbox-group';
+  type: 'input' | 'textarea' | 'select' | 'radio' | 'checkbox-group';
   options?: string[];
   value: string | string[];
   onChange: (name: string, value: string | string[]) => void;
   placeholder?: string;
+  helperText?: string;
   enableCustomInput?: boolean;
   customValue?: string;
   onCustomChange?: (val: string) => void;
@@ -33,6 +34,7 @@ const BrandQuestionRow: React.FC<BrandQuestionRowProps> = ({
   value,
   onChange,
   placeholder,
+  helperText,
   enableCustomInput,
   customValue,
   onCustomChange,
@@ -44,7 +46,7 @@ const BrandQuestionRow: React.FC<BrandQuestionRowProps> = ({
   const customInputRef = useRef<HTMLInputElement>(null);
   
   const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
+    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
   ) => {
     onChange(name, e.target.value);
   };
@@ -156,6 +158,19 @@ const BrandQuestionRow: React.FC<BrandQuestionRowProps> = ({
       );
     }
 
+    if (type === 'textarea') {
+      return (
+        <textarea
+          className="brand-question-input brand-question-textarea"
+          value={value as string}
+          onChange={handleChange}
+          name={name}
+          rows={3}
+          placeholder={placeholder || "Type answer..."}
+        />
+      );
+    }
+
     // Default input type="text"
     return (
       <input
@@ -180,11 +195,16 @@ const BrandQuestionRow: React.FC<BrandQuestionRowProps> = ({
             <span className="brand-label-hint">{subLabel}</span>
           )}
         </div>
+        {helperText && (
+          <div className="brand-question-helper">
+            {helperText}
+          </div>
+        )}
       </div>
       
       <div className="brand-question-line"></div>
       
-      <div className="brand-answer-container">
+      <div className="brand-answer-container brand-answer-open">
         {renderInput()}
 
         {/* Custom Input Field Logic */}

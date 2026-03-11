@@ -1,39 +1,48 @@
-import React, { useState } from 'react';
-import { BrandKit as BrandKitType, BrandFormData, BrandKitLocks, KitSectionId } from '../types';
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  BrandKit as BrandKitType,
+  BrandFormData,
+  BrandKitLocks,
+  KitSectionId,
+  RegenerableKitSectionId,
+  SavedBrandResult,
+} from '../types';
 import BrandHeader from './BrandHeader';
 import BrandSummary from './BrandSummary';
 import LogoGenerator from './LogoGenerator';
 import LogoDisplay from './LogoDisplay';
-import PaymentModal from './PaymentModal';
+import ErrorToast from './ErrorToast';
 import { useError } from '../hooks/useError';
-import { useUsage } from '../hooks/useUsage';
 import { generateLogo } from '../lib/logoGeneration';
-import { saveLogoToProject } from '../lib/projects';
-import type { User } from '@supabase/supabase-js';
 
 interface BrandKitProps {
   kit: BrandKitType;
   formData: BrandFormData;
   onEdit: () => void;
   onBackToDashboard: () => void;
-  onGoHome: () => void;
+  onSignOut: () => void;
+  onCopyLink: () => Promise<void> | void;
+  onExportPdf: () => Promise<void> | void;
   readOnly?: boolean;
-  isFreeTier?: boolean;
-  user: User | null;
-  isLocalMode?: boolean;
-  projectId: string | null;
+  projectId: string;
   kitLocks?: BrandKitLocks;
   onToggleLock?: (sectionId: KitSectionId) => void;
-  onRegenerateSection?: (sectionId: KitSectionId) => void;
+  onRegenerateSection?: (sectionId: RegenerableKitSectionId) => void;
   isRegenerating?: boolean;
   onDuplicate?: () => void;
+  onPersistGeneratedLogo?: (logoUrl: string) => Promise<void>;
+  initialLogoUrl?: string | null;
+  resultHistory: SavedBrandResult[];
+  activeResultId: string;
+  onSelectResult: (resultId: string) => void;
 }
 
-interface SectionProps {
+interface NotebookSectionProps {
+  id: string;
+  eyebrow: string;
   title: string;
   children: React.ReactNode;
   contentToCopy?: string;
-  sectionId?: KitSectionId;
   isLocked?: boolean;
   onToggleLock?: () => void;
   onRegenerate?: () => void;
@@ -41,115 +50,242 @@ interface SectionProps {
   canRegenerate?: boolean;
 }
 
-const BrandKitSection: React.FC<SectionProps> = ({ 
-  title, 
-  children, 
+const SECTION_NAV = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'essence', label: 'Essence' },
+  { id: 'personality', label: 'Personality' },
+  { id: 'palette', label: 'Palette' },
+  { id: 'typography', label: 'Typography' },
+  { id: 'logo', label: 'Logo' },
+  { id: 'voice', label: 'Voice' },
+  { id: 'imagery', label: 'Imagery' },
+  { id: 'applications', label: 'Applications' },
+  { id: 'recap', label: 'Recap' },
+];
+
+const uniqueValues = (values: string[]) => Array.from(new Set(values.filter(Boolean)));
+
+const joinAsSentence = (values: string[]) => {
+  if (values.length === 0) return '';
+  if (values.length === 1) return values[0];
+  if (values.length === 2) return `${values[0]} and ${values[1]}`;
+  return `${values.slice(0, -1).join(', ')}, and ${values[values.length - 1]}`;
+};
+
+const inferFontPreviewClass = (fontName: string) => {
+  const value = fontName.toLowerCase();
+
+  if (
+    value.includes('mono') ||
+    value.includes('courier') ||
+    value.includes('typewriter') ||
+    value.includes('space mono')
+  ) {
+    return 'kit-type-preview-mono';
+  }
+
+  if (
+    value.includes('serif') ||
+    value.includes('garamond') ||
+    value.includes('caslon') ||
+    value.includes('times') ||
+    value.includes('bodoni') ||
+    value.includes('playfair') ||
+    value.includes('didot')
+  ) {
+    return 'kit-type-preview-serif';
+  }
+
+  if (value.includes('script') || value.includes('handwritten') || value.includes('signature')) {
+    return 'kit-type-preview-script';
+  }
+
+  return 'kit-type-preview-sans';
+};
+
+const NotebookSection: React.FC<NotebookSectionProps> = ({
+  id,
+  eyebrow,
+  title,
+  children,
   contentToCopy,
-  sectionId,
   isLocked = false,
   onToggleLock,
   onRegenerate,
   isRegenerating = false,
   canRegenerate = false,
 }) => {
-  const [isOpen, setIsOpen] = useState(true);
-
-  const handleCopy = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (contentToCopy) {
-      navigator.clipboard.writeText(contentToCopy);
-    }
-  };
-
-  const handleLockToggle = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    onToggleLock?.();
-  };
-
-  const handleRegenerate = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!isLocked && !isRegenerating) {
-      onRegenerate?.();
-    }
+  const handleCopy = async () => {
+    if (!contentToCopy) return;
+    await navigator.clipboard.writeText(contentToCopy);
   };
 
   return (
-    <div className={`kit-section ${isLocked ? 'kit-section-locked' : ''}`}>
-      <div className="kit-section-header" onClick={() => setIsOpen(!isOpen)}>
-        <div className="kit-section-title">
-          {title} <span className="kit-toggle-icon">{isOpen ? '[-]' : '[+]'}</span>
+    <section id={id} className={`kit-sheet-section ${isLocked ? 'kit-section-locked' : ''}`}>
+      <div className="kit-sheet-header">
+        <div className="kit-sheet-heading">
+          <div className="kit-sheet-eyebrow">{eyebrow}</div>
+          <h2 className="kit-sheet-title">{title}</h2>
         </div>
-        <div className="kit-section-actions">
+
+        <div className="kit-sheet-actions">
           {onToggleLock && (
-            <button 
-              onClick={handleLockToggle} 
+            <button
+              type="button"
               className={`kit-lock-btn ${isLocked ? 'locked' : ''}`}
-              title={isLocked ? 'Unlock section' : 'Lock section'}
+              onClick={onToggleLock}
             >
-              {isLocked ? '[LOCKED]' : '[LOCK]'}
+              {isLocked ? '[ LOCKED ]' : '[ LOCK ]'}
             </button>
           )}
           {canRegenerate && onRegenerate && (
-            <button 
-              onClick={handleRegenerate} 
+            <button
+              type="button"
               className="kit-regen-btn"
               disabled={isLocked || isRegenerating}
-              title={isLocked ? 'Unlock to regenerate' : 'Regenerate this section'}
+              onClick={onRegenerate}
             >
-              {isRegenerating ? '[...]' : '[REGEN]'}
+              {isRegenerating ? '[ ... ]' : '[ REGENERATE ]'}
             </button>
           )}
           {contentToCopy && (
-            <button onClick={handleCopy} className="kit-copy-btn">
-              [COPY]
+            <button type="button" className="kit-copy-btn" onClick={handleCopy}>
+              [ COPY ]
             </button>
           )}
         </div>
       </div>
-      <div className={`kit-section-body ${isOpen ? '' : 'hidden'}`}>
-        {children}
-      </div>
-    </div>
+
+      <div className="kit-sheet-body">{children}</div>
+    </section>
   );
 };
 
-const BrandKit: React.FC<BrandKitProps> = ({ 
-  kit, 
-  formData, 
-  onEdit, 
-  onBackToDashboard, 
-  onGoHome, 
+const BrandKit: React.FC<BrandKitProps> = ({
+  kit,
+  formData,
+  onEdit,
+  onBackToDashboard,
+  onSignOut,
+  onCopyLink,
+  onExportPdf,
   readOnly = false,
-  isFreeTier = false,
-  user,
-  isLocalMode = false,
   projectId,
   kitLocks = {},
   onToggleLock,
   onRegenerateSection,
   isRegenerating = false,
   onDuplicate,
+  onPersistGeneratedLogo,
+  initialLogoUrl,
+  resultHistory,
+  activeResultId,
+  onSelectResult,
 }) => {
   const [isGeneratingLogo, setIsGeneratingLogo] = useState(false);
-  const [generatedLogoUrl, setGeneratedLogoUrl] = useState<string | null>(null);
-  const [showPaymentModal, setShowPaymentModal] = useState(false);
-  
-  const { showError, showSuccess } = useError();
-  const { recordGeneration, refresh } = useUsage(user, isLocalMode);
+  const [generatedLogoUrl, setGeneratedLogoUrl] = useState<string | null>(initialLogoUrl || null);
+
+  const { toasts, showError, showSuccess, removeToast } = useError();
+
+  useEffect(() => {
+    setGeneratedLogoUrl(initialLogoUrl || null);
+  }, [initialLogoUrl, activeResultId]);
+
+  const synthesizedFoundation = kit.brandFoundation;
+  const synthesizedPersonality = kit.personalityProfile;
+  const synthesizedMessaging = kit.messagingDirection;
+  const synthesizedImagery = kit.imageryDirection;
+  const synthesizedApplications = kit.applicationDirection;
+  const synthesizedLogoDirection = kit.logoDirection;
+
+  const personalityTraits = useMemo(
+    () => uniqueValues([...(synthesizedPersonality?.traits || []), ...(kit.keywords || [])]),
+    [kit.keywords, synthesizedPersonality?.traits]
+  );
+  const personalityTone = uniqueValues([...(synthesizedPersonality?.tone || []), ...(kit.toneOfVoice || [])]);
+  const emotionalDescriptors = uniqueValues([...(synthesizedPersonality?.emotionalDescriptors || [])]);
+
+  const brandEssenceText = kit.brandEssence || 'Brand essence not available yet.';
+  const summaryParagraph =
+    kit.summaryParagraph || 'Generate a brand result to see the synthesized strategic summary.';
+  const audienceSummary = kit.targetAudienceSummary || 'Audience direction was not returned in this result yet.';
+  const voiceSummaryText =
+    synthesizedMessaging?.voiceSummary || 'Messaging direction was not returned in this result yet.';
+  const avoidList =
+    synthesizedMessaging?.avoidLanguage?.length
+      ? synthesizedMessaging.avoidLanguage
+      : ['generic branding cliches', 'empty claims', 'language that sounds louder than the actual offer'];
+
+  const messageExamples =
+    synthesizedMessaging?.messagingPillars?.length
+      ? synthesizedMessaging.messagingPillars
+      : [kit.suggestedTagline || 'Messaging pillars were not returned in this result yet.'];
+  const taglineDirections =
+    synthesizedMessaging?.taglineDirections?.length
+      ? synthesizedMessaging.taglineDirections
+      : [kit.suggestedTagline || 'Tagline directions were not returned in this result yet.'];
+
+  const paletteItems = (kit.colorPaletteSuggestions || []).map((color, index) => ({
+    ...color,
+    role: ['Primary', 'Secondary', 'Accent', 'Support'][index] || 'Support',
+  }));
+
+  const headlineFont = kit.fontPairing?.headlineFont || 'Heading font not specified';
+  const bodyFont = kit.fontPairing?.bodyFont || 'Body font not specified';
+  const accentFont = headlineFont;
+  const essenceMission = synthesizedFoundation?.mission || 'Mission summary was not returned in this result yet.';
+  const essencePositioning =
+    synthesizedFoundation?.positioning || 'Positioning summary was not returned in this result yet.';
+  const essenceEmotion =
+    synthesizedFoundation?.emotionalCharacter || 'Emotional character was not returned in this result yet.';
+  const logoConceptSummary =
+    synthesizedLogoDirection?.conceptSummary || 'Logo direction was not returned in this result yet.';
+
+  const logoDirectionNotes =
+    synthesizedLogoDirection?.creativeNotes?.length
+      ? synthesizedLogoDirection.creativeNotes
+      : ['Creative notes were not returned in this result yet.'];
+
+  const imagerySummary =
+    synthesizedImagery?.photographyDirection ||
+    kit.visualDirection ||
+    'Imagery direction was not returned in this result yet.';
+  const imageryMood = synthesizedImagery?.mood || 'Mood direction was not returned in this result yet.';
+  const imageryArtDirection =
+    synthesizedImagery?.artDirection || 'Art direction was not returned in this result yet.';
+  const imageryNotes = synthesizedImagery?.referenceCues?.length ? synthesizedImagery.referenceCues : [];
+
+  const applications = synthesizedApplications
+    ? [
+        { title: 'Website', text: synthesizedApplications.website },
+        { title: 'Social', text: synthesizedApplications.social },
+        { title: 'Packaging / Collateral', text: synthesizedApplications.packaging },
+        { title: 'Campaign Direction', text: synthesizedApplications.campaign },
+      ]
+    : [
+        {
+          title: 'Website',
+          text: 'Use the essence, typography, and palette as the fixed system so the site reads clearly from hero through detail pages.',
+        },
+        {
+          title: 'Social',
+          text: 'Keep posts visually consistent and let captions repeat the same messaging priorities instead of inventing a new tone each time.',
+        },
+        {
+          title: 'Packaging / Collateral',
+          text: 'Carry the core palette and type hierarchy into labels, decks, cards, and printed material so the brand feels owned in every format.',
+        },
+        {
+          title: 'Campaign Direction',
+          text: 'Anchor campaigns in one recurring promise, then translate it into repeatable image cues, copy hooks, and rollout structure.',
+        },
+      ];
 
   const handleGenerateLogo = async (options: {
     prompt: string;
     style: string;
     aspectRatio: string;
   }) => {
-    // Check if feature is available
-    if (isFreeTier && !isLocalMode) {
-      showError('payment/insufficient-credits', {
-        message: 'Logo generation is available for paid users. Please upgrade to continue.',
-      });
-      return;
-    }
-
     if (!projectId) {
       showError('unknown', { message: 'Project not found. Please save your brand kit first.' });
       return;
@@ -158,36 +294,24 @@ const BrandKit: React.FC<BrandKitProps> = ({
     setIsGeneratingLogo(true);
 
     try {
-      // Get API key for logo generation
-      const apiKey = isLocalMode 
-        ? localStorage.getItem('user_gemini_api_key') 
-        : import.meta.env.VITE_GEMINI_API_KEY;
-      
       const result = await generateLogo({
         prompt: options.prompt,
         style: options.style as any,
         aspectRatio: options.aspectRatio as any,
-        colorPalette: kit.colorPaletteSuggestions?.map(c => c.hex) || [],
-        apiKey: apiKey || undefined,
+        colorPalette: paletteItems.map((color) => color.hex),
       });
 
       if (result.imageUrl) {
         setGeneratedLogoUrl(result.imageUrl);
-        
-        // Save logo to project
-        await saveLogoToProject(projectId, result.imageUrl);
-        
-        // Record generation for non-local users
-        if (!isLocalMode && user) {
-          await recordGeneration(projectId, 'server', 'logo');
-        }
-        
+        await onPersistGeneratedLogo?.(result.imageUrl);
+
         showSuccess('Logo generated successfully!');
       } else if (result.error) {
         throw new Error(result.error);
       }
     } catch (error: any) {
       console.error('Logo generation error:', error);
+
       if (error.message?.includes('prompt')) {
         showError('api/logo-invalid-prompt');
       } else {
@@ -198,199 +322,447 @@ const BrandKit: React.FC<BrandKitProps> = ({
     }
   };
 
-  const handleShare = async () => {
-    const projectData = {
-      id: 'shared-brand',
-      name: formData.brandName,
-      createdAt: Date.now(),
-      formData: formData,
-      brandKit: kit,
-      kitLocks: kitLocks, // Include locks in share payload
-    };
-
-    try {
-      const json = JSON.stringify(projectData);
-      const base64 = btoa(encodeURIComponent(json).replace(/%([0-9A-F]{2})/g, (match, p1) => String.fromCharCode(parseInt(p1, 16))));
-      const url = `${window.location.origin}${window.location.pathname}?share=${base64}`;
-      await navigator.clipboard.writeText(url);
-      showSuccess('Shareable link copied to clipboard!');
-    } catch (e) {
-      showError('unknown', { message: 'Failed to generate shareable link.' });
-    }
+  const jumpToSection = (id: string) => {
+    const section = document.getElementById(id);
+    section?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
+
+  const formatVersionDate = (value: string) =>
+    new Intl.DateTimeFormat(undefined, {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    }).format(new Date(value));
 
   return (
     <div className="brand-page">
+      <ErrorToast toasts={toasts} onDismiss={removeToast} />
+
       <div className="nav-top-bar">
+        <button onClick={onBackToDashboard} className="nav-link-btn">
+          ← DASHBOARD
+        </button>
         {!readOnly ? (
-          <button onClick={onBackToDashboard} className="nav-link-btn">
-            ← DASHBOARD
+          <button onClick={onSignOut} className="nav-link-btn">
+            [ SIGN OUT ]
           </button>
         ) : (
-          <button onClick={onGoHome} className="nav-link-btn">
-            ← HOME
-          </button>
-        )}
-        {/* Hide SHARE/PRINT for read-only shared views */}
-        {!readOnly && (
-          <div className="nav-actions">
-            <button onClick={handleShare} className="nav-link-btn">
-              [SHARE]
-            </button>
-            <button onClick={() => window.print()} className="nav-link-btn">
-              [PRINT]
-            </button>
-          </div>
+          <span className="nav-link-btn nav-link-static">RESULT VIEW</span>
         )}
       </div>
 
-      <BrandHeader 
-        onTitleClick={!readOnly ? onBackToDashboard : onGoHome} 
+      <BrandHeader
+        onTitleClick={onBackToDashboard}
         subtitle={formData.brandName ? `Brand Identity: ${formData.brandName}` : 'The Mosaic Output'}
       />
 
-      <div className="kit-container">
-        
-        <BrandKitSection 
-          title="Brand Essence" 
-          contentToCopy={kit.brandEssence}
-          sectionId="brandEssence"
-          isLocked={kitLocks.brandEssence}
-          onToggleLock={!readOnly && onToggleLock ? () => onToggleLock('brandEssence') : undefined}
-          onRegenerate={!readOnly && onRegenerateSection ? () => onRegenerateSection('brandEssence') : undefined}
-          isRegenerating={isRegenerating}
-          canRegenerate={!readOnly && !isFreeTier}
-        >
-          <div className="kit-essence">{kit.brandEssence}</div>
-        </BrandKitSection>
+      <section id="overview" className="kit-overview-sheet">
+        <div className="kit-overview-copy">
+          <div className="kit-overview-kicker">Generated Brand Direction</div>
+          <h2 className="kit-overview-title">
+            {formData.brandName || 'Your brand'} now has a clearer working system.
+          </h2>
+          <p className="kit-overview-text">
+            This workbook gathers your answers into a strategic summary you can use for design,
+            copy, visuals, and decision-making.
+          </p>
+          <p className="kit-overview-summary">{summaryParagraph}</p>
 
-        <BrandKitSection title="Summary" contentToCopy={kit.summaryParagraph}>
-          <div className="kit-paragraph">{kit.summaryParagraph}</div>
-          <div className="kit-keywords">
-            {kit.keywords?.map((k, i) => (
-              <span key={i} className="kit-keyword">{k}</span>
-            ))}
+          <div className="kit-overview-actions">
+            <button type="button" className="brand-submit-btn" onClick={onExportPdf}>
+              [ EXPORT PDF ]
+            </button>
+
+            {!readOnly ? (
+              <>
+                <button type="button" className="brand-edit-btn" onClick={onCopyLink}>
+                  [ COPY LINK ]
+                </button>
+                <button type="button" className="brand-edit-btn" onClick={onEdit}>
+                  [ EDIT ANSWERS ]
+                </button>
+              </>
+            ) : (
+              onDuplicate && (
+                <button type="button" className="brand-edit-btn" onClick={onDuplicate}>
+                  [ DUPLICATE THIS KIT ]
+                </button>
+              )
+            )}
           </div>
-        </BrandKitSection>
-
-        <div className="kit-grid">
-           <BrandKitSection title="Archetype">
-             <div className="kit-archetype-name">{kit.brandArchetype?.name}</div>
-             <div className="kit-archetype-desc">{kit.brandArchetype?.explanation}</div>
-           </BrandKitSection>
-
-           <BrandKitSection title="Tone of Voice">
-             <ul className="kit-tone-list">
-               {kit.toneOfVoice?.map((tone, i) => (
-                 <li key={i}>{tone}</li>
-               ))}
-             </ul>
-           </BrandKitSection>
         </div>
 
-        <BrandKitSection title="Color Palette">
-          <div className="kit-colors-grid">
-            {kit.colorPaletteSuggestions?.map((color, i) => (
-              <div key={i} className="kit-color-item">
-                <div className="kit-swatch" style={{ backgroundColor: color.hex }}></div>
-                <div className="kit-color-info">
-                  <span className="kit-color-name">{color.name}</span>
-                  <span className="kit-color-hex">{color.hex}</span>
-                  <span className="kit-color-usage">{color.usage}</span>
+        <div className="kit-overview-aside">
+          <div className="kit-overview-note">
+            <span className="kit-overview-note-label">Archetype</span>
+            <strong>{kit.brandArchetype?.name || 'Emerging Direction'}</strong>
+            <p>{kit.brandArchetype?.explanation || 'The broader role this brand wants to play is still coming into focus.'}</p>
+          </div>
+
+          <div className="kit-overview-note">
+            <span className="kit-overview-note-label">Keywords</span>
+            <div className="kit-tag-row">
+              {personalityTraits.slice(0, 6).map((item) => (
+                <span key={item} className="kit-tag">
+                  {item}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          <div className="kit-overview-note kit-version-note">
+            <span className="kit-overview-note-label">Workbook Versions</span>
+            <div className="kit-version-stack">
+              {resultHistory.map((result, index) => {
+                const versionNumber = resultHistory.length - index;
+                const isActive = result.id === activeResultId;
+                const isLatest = index === 0;
+
+                return (
+                  <button
+                    key={result.id}
+                    type="button"
+                    className={`kit-version-item ${isActive ? 'active' : ''}`}
+                    onClick={() => onSelectResult(result.id)}
+                  >
+                    <div className="kit-version-item-top">
+                      <strong>Version {versionNumber}</strong>
+                      {isLatest && <span className="kit-version-badge">Latest</span>}
+                    </div>
+                    <span>{formatVersionDate(result.createdAt)}</span>
+                    <p>{result.result.brandEssence || 'Saved brand direction.'}</p>
+                    {result.sourceModel && (
+                      <span className="kit-version-model">{result.sourceModel}</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div className="kit-layout">
+        <aside className="kit-toc">
+          <div className="kit-toc-title">Notebook Map</div>
+          <div className="kit-toc-list">
+            {SECTION_NAV.map((section, index) => (
+              <button
+                key={section.id}
+                type="button"
+                className="kit-toc-link"
+                onClick={() => jumpToSection(section.id)}
+              >
+                <span>{String(index + 1).padStart(2, '0')}</span>
+                <span>{section.label}</span>
+              </button>
+            ))}
+          </div>
+        </aside>
+
+        <div className="kit-main">
+          <NotebookSection
+            id="essence"
+            eyebrow="Core Identity"
+            title="Brand Essence"
+            contentToCopy={`${brandEssenceText}\n\n${summaryParagraph}`}
+            isLocked={kitLocks.brandEssence}
+            onToggleLock={!readOnly && onToggleLock ? () => onToggleLock('brandEssence') : undefined}
+            onRegenerate={!readOnly && onRegenerateSection ? () => onRegenerateSection('brandEssence') : undefined}
+            isRegenerating={isRegenerating}
+            canRegenerate={!readOnly}
+          >
+            <p className="kit-essence">{brandEssenceText}</p>
+
+            <div className="kit-note-grid">
+              <div className="kit-note-card">
+                <span className="kit-note-label">Mission / Purpose</span>
+                <p>{essenceMission}</p>
+              </div>
+              <div className="kit-note-card">
+                <span className="kit-note-label">Positioning</span>
+                <p>{essencePositioning}</p>
+              </div>
+              <div className="kit-note-card">
+                <span className="kit-note-label">Audience</span>
+                <p>{audienceSummary}</p>
+              </div>
+              <div className="kit-note-card">
+                <span className="kit-note-label">Emotional Character</span>
+                <p>{essenceEmotion}</p>
+              </div>
+            </div>
+          </NotebookSection>
+
+          <NotebookSection
+            id="personality"
+            eyebrow="How The Brand Feels"
+            title="Brand Personality"
+            contentToCopy={[...personalityTraits, ...personalityTone, ...emotionalDescriptors].join(', ')}
+          >
+            <div className="kit-personality-groups">
+              <div className="kit-personality-group">
+                <span className="kit-note-label">Traits</span>
+                <div className="kit-tag-row">
+                  {personalityTraits.map((item) => (
+                    <span key={item} className="kit-tag">
+                      {item}
+                    </span>
+                  ))}
                 </div>
               </div>
-            ))}
-          </div>
-        </BrandKitSection>
 
-        <div className="kit-grid">
-          <BrandKitSection title="Typography">
-            <div className="kit-typography-box">
-              <div className="kit-font-label">Headline</div>
-              <div className="kit-font-headline">{kit.fontPairing?.headlineFont}</div>
-              <div className="kit-font-label">Body</div>
-              <div className="kit-font-body">{kit.fontPairing?.bodyFont}</div>
-              <div className="kit-font-note">{kit.fontPairing?.note}</div>
+              <div className="kit-personality-group">
+                <span className="kit-note-label">Tone</span>
+                <div className="kit-tag-row">
+                  {personalityTone.map((item) => (
+                    <span key={item} className="kit-tag kit-tag-accent">
+                      {item}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              <div className="kit-personality-group">
+                <span className="kit-note-label">Emotional Feel</span>
+                <div className="kit-tag-row">
+                  {emotionalDescriptors.map((item) => (
+                    <span key={item} className="kit-tag kit-tag-soft">
+                      {item}
+                    </span>
+                  ))}
+                </div>
+              </div>
             </div>
-          </BrandKitSection>
+          </NotebookSection>
 
-          <BrandKitSection title="Tagline" contentToCopy={kit.suggestedTagline}>
-            <div className="kit-tagline">"{kit.suggestedTagline}"</div>
-          </BrandKitSection>
+          <NotebookSection
+            id="palette"
+            eyebrow="Visual System"
+            title="Color Palette"
+            contentToCopy={paletteItems.map((color) => `${color.role}: ${color.name} ${color.hex} — ${color.usage}`).join('\n')}
+            onRegenerate={!readOnly && onRegenerateSection ? () => onRegenerateSection('colorPaletteSuggestions') : undefined}
+            isRegenerating={isRegenerating}
+            canRegenerate={!readOnly}
+          >
+            {paletteItems.length > 0 ? (
+              <div className="kit-palette-grid">
+                {paletteItems.map((color) => (
+                  <div key={`${color.name}-${color.hex}`} className="kit-palette-card">
+                    <div className="kit-palette-swatch" style={{ backgroundColor: color.hex }} />
+                    <div className="kit-palette-meta">
+                      <span className="kit-palette-role">{color.role}</span>
+                      <strong>{color.name}</strong>
+                      <span>{color.hex}</span>
+                      <p>{color.usage}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="kit-empty-note">
+                No palette suggestions were generated yet. Regenerate the result after refining the workbook if you want a clearer palette system.
+              </div>
+            )}
+          </NotebookSection>
+
+          <NotebookSection
+            id="typography"
+            eyebrow="Reading Rhythm"
+            title="Typography"
+            contentToCopy={`${headlineFont}\n${bodyFont}\n${kit.fontPairing?.note || 'Use the type pairing with restraint and consistency.'}`}
+          >
+            <div className="kit-type-grid">
+              <div className="kit-type-card">
+                <span className="kit-note-label">Display / Heading</span>
+                <strong>{headlineFont}</strong>
+                <div className={`kit-type-preview ${inferFontPreviewClass(headlineFont)}`}>Brand Mosaic</div>
+                <p>Use for page titles, section headlines, and places where the brand should feel most expressive.</p>
+              </div>
+
+              <div className="kit-type-card">
+                <span className="kit-note-label">Body</span>
+                <strong>{bodyFont}</strong>
+                <div className={`kit-type-preview ${inferFontPreviewClass(bodyFont)}`}>Clear, practical body copy for everyday reading.</div>
+                <p>Use for paragraphs, supporting notes, and content that needs clarity first.</p>
+              </div>
+
+              <div className="kit-type-card">
+                <span className="kit-note-label">Accent / Reference</span>
+                <strong>{accentFont}</strong>
+                <div className={`kit-type-preview ${inferFontPreviewClass(accentFont)}`}>A smaller styling cue for labels, pull quotes, or emphasis.</div>
+                <p>{kit.fontPairing?.note || 'Treat this as a style cue rather than a strict final font prescription.'}</p>
+              </div>
+            </div>
+          </NotebookSection>
+
+          <NotebookSection
+            id="logo"
+            eyebrow="Mark Direction"
+            title="Logo Direction"
+            contentToCopy={kit.logoPrompt || ''}
+            onRegenerate={!readOnly && onRegenerateSection ? () => onRegenerateSection('logoDirection') : undefined}
+            isRegenerating={isRegenerating}
+            canRegenerate={!readOnly}
+          >
+            <div className="kit-logo-layout">
+              <div className="kit-logo-copy">
+                <p className="kit-paragraph">{logoConceptSummary}</p>
+
+                <div className="kit-note-grid">
+                  {logoDirectionNotes.map((item) => (
+                    <div key={item} className="kit-note-card">
+                      <span className="kit-note-label">Creative Note</span>
+                      <p>{item}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="kit-logo-prompt-block">
+                <span className="kit-note-label">Logo Prompt</span>
+                <p>{kit.logoPrompt || 'A full logo prompt becomes available when the analysis returns logo direction details.'}</p>
+              </div>
+            </div>
+
+            {!readOnly && kit.logoPrompt && (
+              <LogoGenerator
+                logoPrompt={kit.logoPrompt}
+                onGenerate={handleGenerateLogo}
+                isGenerating={isGeneratingLogo}
+                disabled={false}
+              />
+            )}
+
+            {generatedLogoUrl && (
+              <LogoDisplay
+                logoUrl={generatedLogoUrl}
+                onRegenerate={() => setGeneratedLogoUrl(null)}
+                onDownload={() => showSuccess('Logo downloaded!')}
+                isGenerating={isGeneratingLogo}
+              />
+            )}
+          </NotebookSection>
+
+          <NotebookSection
+            id="voice"
+            eyebrow="Messaging"
+            title="Voice & Messaging"
+            contentToCopy={`${voiceSummaryText}\n\n${messageExamples.join('\n')}\n\n${taglineDirections.join('\n')}`}
+            onRegenerate={!readOnly && onRegenerateSection ? () => onRegenerateSection('messagingDirection') : undefined}
+            isRegenerating={isRegenerating}
+            canRegenerate={!readOnly}
+          >
+            <div className="kit-voice-grid">
+              <div className="kit-voice-card">
+                <span className="kit-note-label">Brand voice is...</span>
+                <p>{voiceSummaryText}</p>
+              </div>
+
+              <div className="kit-voice-card">
+                <span className="kit-note-label">Say it like this...</span>
+                <ul className="kit-bullet-list">
+                  {messageExamples.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="kit-voice-card">
+                <span className="kit-note-label">Tagline directions...</span>
+                <ul className="kit-bullet-list">
+                  {taglineDirections.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="kit-voice-card">
+                <span className="kit-note-label">Avoid sounding like...</span>
+                <ul className="kit-bullet-list">
+                  {avoidList.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </NotebookSection>
+
+          <NotebookSection
+            id="imagery"
+            eyebrow="Visual World"
+            title="Imagery / Visual Direction"
+            contentToCopy={`${imagerySummary}\n\n${imageryMood}\n\n${imageryArtDirection}\n\n${imageryNotes.join(', ')}`}
+            onRegenerate={!readOnly && onRegenerateSection ? () => onRegenerateSection('imageryDirection') : undefined}
+            isRegenerating={isRegenerating}
+            canRegenerate={!readOnly}
+          >
+            <p className="kit-paragraph">{imagerySummary}</p>
+
+            <div className="kit-note-grid">
+              <div className="kit-note-card">
+                <span className="kit-note-label">Mood Cues</span>
+                <p>{imageryMood}</p>
+              </div>
+              <div className="kit-note-card">
+                <span className="kit-note-label">Art Direction</span>
+                <p>{imageryArtDirection}</p>
+              </div>
+              <div className="kit-note-card">
+                <span className="kit-note-label">Photography Direction</span>
+                <p>{imagerySummary}</p>
+              </div>
+              <div className="kit-note-card">
+                <span className="kit-note-label">Reference Cues</span>
+                <p>{imageryNotes.length > 0 ? joinAsSentence(imageryNotes) : 'Reference cues still need more detail.'}</p>
+              </div>
+            </div>
+
+            {imageryNotes.length > 0 && (
+              <div className="kit-reference-strip">
+                <span className="kit-note-label">Reference Cues</span>
+                <div className="kit-tag-row">
+                  {uniqueValues(imageryNotes).map((item) => (
+                    <span key={item} className="kit-tag">
+                      {item}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </NotebookSection>
+
+          <NotebookSection
+            id="applications"
+            eyebrow="Use It In The World"
+            title="Real-World Applications"
+            contentToCopy={applications.map((item) => `${item.title}: ${item.text}`).join('\n')}
+          >
+            <div className="kit-application-grid">
+              {applications.map((item) => (
+                <div key={item.title} className="kit-application-card">
+                  <span className="kit-note-label">{item.title}</span>
+                  <p>{item.text}</p>
+                </div>
+              ))}
+            </div>
+          </NotebookSection>
+
+          <NotebookSection
+            id="recap"
+            eyebrow="Your Starting Material"
+            title="Original Input Recap"
+          >
+            <div className="kit-recap-intro">
+              Open any group below to compare the generated direction with the answers you originally gave.
+            </div>
+            <BrandSummary formData={formData} onEdit={onEdit} readOnly={true} />
+          </NotebookSection>
         </div>
-
-        {!isFreeTier && kit.logoPrompt && (
-          <BrandKitSection title="Logo Visual Prompt" contentToCopy={kit.logoPrompt}>
-             <div className="kit-logo-prompt">
-               {kit.logoPrompt}
-             </div>
-          </BrandKitSection>
-        )}
-
-        {!readOnly && !isFreeTier && kit.logoPrompt && (
-          <LogoGenerator
-            logoPrompt={kit.logoPrompt}
-            onGenerate={handleGenerateLogo}
-            isGenerating={isGeneratingLogo}
-            disabled={isFreeTier && !isLocalMode}
-          />
-        )}
-
-        {generatedLogoUrl && (
-          <LogoDisplay
-            logoUrl={generatedLogoUrl}
-            onRegenerate={() => {
-              setGeneratedLogoUrl(null);
-            }}
-            onDownload={() => showSuccess('Logo downloaded!')}
-            isGenerating={isGeneratingLogo}
-          />
-        )}
-
-        {isFreeTier && !isLocalMode && (
-          <div className="kit-upgrade-box">
-            <h3 className="kit-upgrade-title">[ UPGRADE TO UNLOCK ]</h3>
-            <p className="kit-upgrade-text">
-              Get access to full brand analysis, logo generation, and more features for just $5.
-            </p>
-            <button 
-              className="brand-submit-btn"
-              onClick={() => setShowPaymentModal(true)}
-              disabled={!user}
-            >
-              [ PURCHASE CREDITS ]
-            </button>
-          </div>
-        )}
-
-        <BrandKitSection title="Original Input Recap">
-          <BrandSummary formData={formData} onEdit={onEdit} readOnly={readOnly} />
-        </BrandKitSection>
-
       </div>
 
-      <div className="brand-actions kit-actions">
-        {readOnly ? (
-          <button onClick={onDuplicate} className="brand-submit-btn kit-duplicate-btn">
-            [ DUPLICATE THIS KIT ]
-          </button>
-        ) : (
-          <button onClick={handleShare} className="brand-submit-btn kit-share-btn">
-            [ COPY LINK ]
-          </button>
-        )}
-      </div>
-
-      {showPaymentModal && user && (
-        <PaymentModal
-          userId={user.id}
-          userEmail={user.email || ''}
-          onSuccess={() => {
-            refresh();
-          }}
-          onClose={() => setShowPaymentModal(false)}
-        />
-      )}
     </div>
   );
 };

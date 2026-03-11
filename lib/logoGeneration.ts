@@ -229,11 +229,6 @@ export const generateLogo = async (
 ): Promise<LogoGenerationResult> => {
   console.log('Generating logo with prompt:', options.prompt);
   
-  // Get API key from options or environment
-  const apiKey = options.apiKey || 
-    (typeof window !== 'undefined' && localStorage.getItem('user_gemini_api_key')) ||
-    import.meta.env.VITE_GEMINI_API_KEY;
-  
   // Try Replicate first if API key is available
   if (import.meta.env.VITE_REPLICATE_API_KEY) {
     try {
@@ -271,4 +266,3 @@ export const uploadLogoToStorage = async (
   // For now, return the base64 data URL
   return `data:image/png;base64,${base64Data}`;
 };
-

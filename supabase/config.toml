@@ -1,0 +1,16 @@
+project_id = "ktpulaumgibappbwcuoq"
+
+[functions.generate-brand-kit]
+verify_jwt = false
+
+[functions.paystack-webhook]
+verify_jwt = false
+
+[functions.scrape-product]
+verify_jwt = false
+
+[functions.stripe-checkout]
+verify_jwt = true
+
+[functions.stripe-webhook]
+verify_jwt = false

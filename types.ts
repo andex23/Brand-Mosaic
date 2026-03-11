@@ -51,22 +51,114 @@ export interface BrandKit {
     note: string;
   };
   logoPrompt: string;
+  brandFoundation?: {
+    mission: string;
+    positioning: string;
+    emotionalCharacter: string;
+  };
+  personalityProfile?: {
+    traits: string[];
+    tone: string[];
+    emotionalDescriptors: string[];
+  };
+  messagingDirection?: {
+    voiceSummary: string;
+    messagingPillars: string[];
+    avoidLanguage: string[];
+    taglineDirections: string[];
+  };
+  imageryDirection?: {
+    photographyDirection: string;
+    mood: string;
+    artDirection: string;
+    referenceCues: string[];
+  };
+  applicationDirection?: {
+    website: string;
+    social: string;
+    packaging: string;
+    campaign: string;
+  };
+  logoDirection?: {
+    conceptSummary: string;
+    creativeNotes: string[];
+  };
 }
 
+export type RegenerableKitSectionId =
+  | 'brandEssence'
+  | 'messagingDirection'
+  | 'colorPaletteSuggestions'
+  | 'logoDirection'
+  | 'imageryDirection';
+
 // Kit section identifiers for lock/regenerate feature
-export type KitSectionId = 'brandEssence' | 'summaryParagraph' | 'keywords' | 'toneOfVoice' | 
-  'brandArchetype' | 'suggestedTagline' | 'colorPaletteSuggestions' | 'fontPairing' | 'logoPrompt';
+export type KitSectionId =
+  | 'brandEssence'
+  | 'summaryParagraph'
+  | 'keywords'
+  | 'toneOfVoice'
+  | 'brandArchetype'
+  | 'suggestedTagline'
+  | 'colorPaletteSuggestions'
+  | 'fontPairing'
+  | 'logoPrompt'
+  | 'messagingDirection'
+  | 'logoDirection'
+  | 'imageryDirection';
 
 // Lock state for kit sections
 export type BrandKitLocks = Partial<Record<KitSectionId, boolean>>;
 
+export type ProjectStatus = 'draft' | 'generating' | 'generated';
+
+export type GenerationStatusPhase =
+  | 'idle'
+  | 'saving'
+  | 'synthesizing'
+  | 'persisting'
+  | 'failed';
+
+export interface GenerationStatusNotice {
+  phase: GenerationStatusPhase;
+  title?: string;
+  message?: string;
+  notes?: string[];
+  actionHref?: string;
+  actionLabel?: string;
+}
+
+export interface SavedBrandResult {
+  id: string;
+  projectId: string;
+  result: BrandKit;
+  logoImageUrl?: string | null;
+  logoGeneratedAt?: string | null;
+  sourceModel?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface BrandProject {
   id: string;
-  name: string;
-  createdAt: number;
+  userId: string;
+  brandName: string;
+  status: ProjectStatus;
+  createdAt: string;
+  updatedAt: string;
+  kitLocks: BrandKitLocks;
+  answeredCount: number;
+  totalPromptCount: number;
+  completionPercent: number;
+  resultCount: number;
+  latestResult?: SavedBrandResult | null;
+}
+
+export interface BrandProjectWorkspace {
+  project: BrandProject;
   formData: BrandFormData;
-  brandKit?: BrandKit;
-  kitLocks?: BrandKitLocks;
+  latestResult: SavedBrandResult | null;
+  resultHistory: SavedBrandResult[];
 }
 
 // ============================================

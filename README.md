@@ -186,17 +186,26 @@ The app uses state-based view switching (no React Router):
    ```env
    VITE_SUPABASE_URL=https://your-project.supabase.co
    VITE_SUPABASE_ANON_KEY=your_anon_key
-   VITE_GEMINI_API_KEY=your_gemini_api_key
    VITE_PAYSTACK_PUBLIC_KEY=your_paystack_key  # optional
    VITE_REPLICATE_API_KEY=your_replicate_key    # optional, for scene fallback
    ```
 
-4. **Deploy the scrape-product Edge Function** (optional, for URL product fetching):
+4. **Set Edge Function secrets**:
    ```bash
+   supabase secrets set OPENAI_API_KEY=your_openai_key
+   supabase secrets set GEMINI_API_KEY=your_gemini_key
+   supabase secrets set OPENAI_MODEL=gpt-5-mini
+   supabase secrets set GEMINI_MODEL=gemini-2.5-flash
+   supabase secrets set BRAND_AI_PROVIDER_CHAIN=openai,gemini
+   ```
+
+5. **Deploy Edge Functions**:
+   ```bash
+   supabase functions deploy generate-brand-kit
    supabase functions deploy scrape-product
    ```
 
-5. **Start:**
+6. **Start:**
    ```bash
    npm run dev
    ```
@@ -210,11 +219,16 @@ The app uses state-based view switching (no React Router):
 3. Set environment variables in Vercel dashboard:
    - `VITE_SUPABASE_URL`
    - `VITE_SUPABASE_ANON_KEY`
-   - `VITE_GEMINI_API_KEY`
    - `VITE_PAYSTACK_PUBLIC_KEY` (optional)
    - `VITE_REPLICATE_API_KEY` (optional)
-4. Build command: `npm run build`
-5. Output directory: `dist`
+4. Set Supabase Edge Function secrets for generation:
+   - `OPENAI_API_KEY`
+   - `GEMINI_API_KEY`
+   - `OPENAI_MODEL`
+   - `GEMINI_MODEL`
+   - `BRAND_AI_PROVIDER_CHAIN`
+5. Build command: `npm run build`
+6. Output directory: `dist`
 
 ---
 
@@ -291,11 +305,18 @@ Photo Studio requires paid credits in cloud mode. Free in local mode.
 |----------|----------|-------------|
 | `VITE_SUPABASE_URL` | For cloud mode | Supabase project URL |
 | `VITE_SUPABASE_ANON_KEY` | For cloud mode | Supabase anonymous key |
-| `VITE_GEMINI_API_KEY` | For cloud mode | Server-side Gemini key |
 | `VITE_PAYSTACK_PUBLIC_KEY` | Optional | Paystack payments |
 | `VITE_REPLICATE_API_KEY` | Optional | Scene generation fallback |
 
-In **local mode**, the user provides their own Gemini API key through the UI. No env vars needed.
+Supabase Edge Function secrets:
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `OPENAI_API_KEY` | Yes | Primary provider key for brand generation |
+| `GEMINI_API_KEY` | Yes | Fallback provider key for brand generation |
+| `OPENAI_MODEL` | Optional | OpenAI model override, defaults to `gpt-5-mini` |
+| `GEMINI_MODEL` | Optional | Gemini model override, defaults to `gemini-2.5-flash` |
+| `BRAND_AI_PROVIDER_CHAIN` | Optional | Provider order, defaults to `openai,gemini` |
 
 ---
 

@@ -1,549 +1,912 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
+import {
+  BrowserRouter,
+  Navigate,
+  Route,
+  Routes,
+  useNavigate,
+  useParams,
+  useSearchParams,
+} from 'react-router-dom';
 import Dashboard from './components/Dashboard';
 import BrandFormPage from './components/BrandFormPage';
 import BrandKit from './components/BrandKit';
 import HomePage from './components/HomePage';
-import type { EntryPath } from './components/HomePage';
-import PhotoStudioPage from './components/photo-studio/PhotoStudioPage';
 import ErrorBoundary from './components/ErrorBoundary';
 import ErrorToast from './components/ErrorToast';
-import { BrandFormData, BrandKit as BrandKitType, BrandProject, KitSectionId, BrandKitLocks } from './types';
-import { GoogleGenAI, Type } from "@google/genai";
-import { supabase } from './lib/supabase';
+import ProjectResultState from './components/ProjectResultState';
+import ProtectedRoute from './components/ProtectedRoute';
+import { AuthProvider, useAuth } from './hooks/useAuth';
 import { useError } from './hooks/useError';
-import { useUsage } from './hooks/useUsage';
-import type { User } from '@supabase/supabase-js';
+import {
+  BrandAiAttemptFailure,
+  BrandAiRequestError,
+  getBrandAiDocs,
+  getBrandAiProviderChain,
+  getBrandAiProviderLabel,
+} from './lib/brandAi';
+import { generateBrandKit, regenerateBrandSection } from './lib/brandGeneration';
+import { getProjectBrandName } from './lib/brandWorkbook';
+import {
+  BrandProject,
+  BrandProjectWorkspace,
+  BrandKitLocks,
+  GenerationStatusNotice,
+  KitSectionId,
+  RegenerableKitSectionId,
+} from './types';
+import {
+  createProject,
+  deleteProject,
+  duplicateProject,
+  listProjects,
+  loadProjectWorkspace,
+  recordExport,
+  saveGeneratedLogo,
+  saveQuestionnaireAnswers,
+  updateProjectKitLocks,
+  updateProjectStatus,
+} from './lib/projects';
+import { openBrandKitPdfExport } from './lib/brandExport';
 
-const generateId = () => Math.random().toString(36).substr(2, 9);
+const LoadingPage: React.FC<{ label?: string }> = ({ label = '[ LOADING MOSAIC... ]' }) => (
+  <div className="brand-page app-loading-state">{label}</div>
+);
 
-// Generate limited prompt for free tier users
-const generateLimitedPrompt = (data: BrandFormData): string => {
-  return `Analyze this brand data and generate a BASIC JSON brand kit with LIMITED fields: ${JSON.stringify(data)}
-  
-  Only include these fields:
-  - brandEssence (brief, max 50 words)
-  - summaryParagraph (brief, max 100 words)
-  - keywords (max 3)
-  - toneOfVoice (max 3)
-  - suggestedTagline
-  - colorPaletteSuggestions (max 2 colors only)
-  
-  DO NOT include: brandArchetype, visualDirection, fontPairing, logoPrompt, targetAudienceSummary.`;
+const idleGenerationStatus: GenerationStatusNotice = {
+  phase: 'idle',
 };
 
-// Generate full prompt for paid users
-const generateFullPrompt = (data: BrandFormData): string => {
-  return `Analyze this brand data and generate a comprehensive JSON brand kit: ${JSON.stringify(data)}
-  
-  Include all fields with rich, detailed content.`;
+const MissingProjectState: React.FC = () => {
+  const navigate = useNavigate();
+
+  return (
+    <div className="brand-page project-missing-state">
+      <div className="project-missing-card">
+        <h2>[ PROJECT NOT FOUND ]</h2>
+        <p>This workbook is unavailable or does not belong to the signed-in account.</p>
+        <button className="brand-submit-btn" onClick={() => navigate('/dashboard')}>
+          [ BACK TO DASHBOARD ]
+        </button>
+      </div>
+    </div>
+  );
 };
 
-const AppContent: React.FC = () => {
-  const [user, setUser] = useState<User | null>(null);
-  const [authLoading, setAuthLoading] = useState(true);
-  const [isLocalMode, setIsLocalMode] = useState(false);
-  
-  const [projects, setProjects] = useState<BrandProject[]>([]);
-  const [currentView, setCurrentView] = useState<'home' | 'dashboard' | 'form' | 'kit' | 'photo-studio'>('home');
-  const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  
-  // Ephemeral shared project for anonymous viewers
-  const [sharedProject, setSharedProject] = useState<BrandProject | null>(null);
+const getInterruptedGenerationStatus = (): GenerationStatusNotice => ({
+  phase: 'failed',
+  title: 'The last generation attempt did not finish saving.',
+  message:
+    'This workbook was left in a generating state, but no result was stored. Your answers are still here.',
+  notes: [
+    'Review the workbook and retry once the provider is available.',
+    'If the issue was provider quota, the next attempt will succeed only after quota is available again.',
+  ],
+});
 
-  // Track intended destination from home page path selection
-  const intendedDestination = useRef<EntryPath | null>(null);
+const getProviderChainLabel = () =>
+  getBrandAiProviderChain().map((provider) => getBrandAiProviderLabel(provider)).join(' -> ');
 
-  const { toasts, showError, showSuccess, removeToast } = useError();
-  const { profile, canGenerate, isFreeTier, recordGeneration } = useUsage(user, isLocalMode);
+const getAttemptNote = (attempt: BrandAiAttemptFailure): string => {
+  const label = getBrandAiProviderLabel(attempt.provider);
 
-  useEffect(() => {
-    // Always start from home page - don't auto-load local sessions
-    // Users must explicitly choose to continue
-    
-    if (!supabase) {
-      // Supabase not configured, stay on home
-      setAuthLoading(false);
-      setCurrentView('home');
-      return;
-    }
+  switch (attempt.code) {
+    case 'key-not-found':
+      return `${label} is not configured for this app.`;
+    case 'invalid-key':
+      return `${label} rejected the configured API key.`;
+    case 'quota-exceeded':
+      return `${label} reported that quota or credits are unavailable.`;
+    case 'rate-limit':
+      return `${label} rate-limited the request before a result was returned.`;
+    default:
+      return `${label}: ${attempt.message}`;
+  }
+};
 
-    // Get initial session for authenticated users
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      setAuthLoading(false);
-      if (session?.user) {
-        setIsLocalMode(false);
-        loadProjectsForUser(session.user.id);
-        // Respect intended destination if set, otherwise dashboard
-        const dest = intendedDestination.current;
-        intendedDestination.current = null;
-        setCurrentView(dest === 'photo-studio' ? 'photo-studio' : 'dashboard');
-      } else {
-        setCurrentView('home');
-      }
-    });
+const getAttemptAction = (attempt: BrandAiAttemptFailure) => {
+  const docs = getBrandAiDocs(attempt.provider);
+  const label = getBrandAiProviderLabel(attempt.provider);
 
-    // Listen for auth changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        setIsLocalMode(false);
-        loadProjectsForUser(session.user.id);
-        // Respect intended destination if set, otherwise dashboard
-        const dest = intendedDestination.current;
-        intendedDestination.current = null;
-        setCurrentView(dest === 'photo-studio' ? 'photo-studio' : 'dashboard');
-      } else {
-        setProjects([]);
-        setIsLocalMode(false);
-        setCurrentView('home');
-      }
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
-
-  const loadProjectsForUser = (uid: string) => {
-    const saved = localStorage.getItem(`brand_projects_${uid}`);
-    if (saved) {
-      try {
-        setProjects(JSON.parse(saved));
-      } catch (e) {
-        console.error("Failed to parse projects", e);
-        showError('db/load-failed');
-      }
-    }
-  };
-
-  // Parse share link - works for both anonymous and authenticated users
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const shareData = params.get('share');
-    if (shareData) {
-      try {
-        const json = decodeURIComponent(Array.prototype.map.call(atob(shareData), (c: string) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
-        const parsed: BrandProject = JSON.parse(json);
-        
-        if (user || isLocalMode) {
-          // Authenticated/local user: check if already exists, otherwise save
-          const savedProjects = [...projects];
-          const exists = savedProjects.find(p => p.createdAt === parsed.createdAt);
-          if (exists) {
-            setCurrentProjectId(exists.id);
-            setSharedProject(null);
-          } else {
-            const newProject: BrandProject = {
-              ...parsed,
-              id: `shared-${Date.now()}`,
-              kitLocks: parsed.kitLocks || {},
-            };
-            setProjects([newProject, ...savedProjects]);
-            setCurrentProjectId(newProject.id);
-            setSharedProject(null);
-          }
-          showSuccess('Shared project loaded!');
-        } else {
-          // Anonymous user: show ephemeral read-only view
-          setSharedProject({
-            ...parsed,
-            kitLocks: parsed.kitLocks || {},
-          });
-        }
-        setCurrentView('kit');
-        window.history.replaceState({}, '', window.location.pathname);
-      } catch (e) {
-        console.error("Error parsing share link", e);
-        showError('db/load-failed');
-      }
-    }
-  }, [user, isLocalMode]);
-  
-  // Auto-import pending shared kit after auth/local start
-  useEffect(() => {
-    if ((user || isLocalMode) && !authLoading) {
-      const pendingData = sessionStorage.getItem('pending_shared_project');
-      if (pendingData) {
-        try {
-          const pending: BrandProject = JSON.parse(pendingData);
-          const newProject: BrandProject = {
-            ...pending,
-            id: `imported-${Date.now()}`,
-            name: `${pending.name} (Copy)`,
-          };
-          setProjects(prev => [newProject, ...prev]);
-          setCurrentProjectId(newProject.id);
-          setCurrentView('kit');
-          sessionStorage.removeItem('pending_shared_project');
-          showSuccess('Project duplicated to your dashboard!');
-        } catch (e) {
-          console.error("Error importing pending project", e);
-        }
-      }
-    }
-  }, [user, isLocalMode, authLoading]);
-  
-  // Handle duplicate shared kit
-  const handleDuplicateShared = () => {
-    const projectToDuplicate = sharedProject || projects.find(p => p.id === currentProjectId);
-    if (!projectToDuplicate) return;
-    
-    if (user || isLocalMode) {
-      // Clone into projects immediately
-      const newProject: BrandProject = {
-        ...projectToDuplicate,
-        id: `copy-${Date.now()}`,
-        name: `${projectToDuplicate.name} (Copy)`,
-        createdAt: Date.now(),
+  switch (attempt.code) {
+    case 'key-not-found':
+    case 'invalid-key':
+      return {
+        actionHref: docs.keys,
+        actionLabel: `Review ${label} API setup`,
       };
-      setProjects(prev => [newProject, ...prev]);
-      setCurrentProjectId(newProject.id);
-      setSharedProject(null);
-      setCurrentView('kit');
-      showSuccess('Project duplicated!');
-    } else {
-      // Anonymous: store in sessionStorage and redirect to home
-      sessionStorage.setItem('pending_shared_project', JSON.stringify(projectToDuplicate));
-      setSharedProject(null);
-      setCurrentView('home');
-      showSuccess('Sign in or start local to save this kit!');
-    }
+    case 'quota-exceeded':
+      return {
+        actionHref: docs.quota,
+        actionLabel: `Review ${label} quota`,
+      };
+    default:
+      return undefined;
+  }
+};
+
+const resolveBrandAiError = (
+  error: BrandAiRequestError
+): {
+  errorCode: string;
+  toastMessage?: string;
+  persistentToast?: boolean;
+  status: GenerationStatusNotice;
+} => {
+  const attempts = error.attempts;
+  const notes = [
+    `Provider chain tried: ${getProviderChainLabel()}.`,
+    ...attempts.map((attempt) => getAttemptNote(attempt)),
+  ];
+  const actionableAttempt =
+    attempts.find((attempt) => attempt.code !== 'generation-failed') || attempts[0];
+  const action = actionableAttempt ? getAttemptAction(actionableAttempt) : undefined;
+
+  switch (error.code) {
+    case 'key-not-found':
+      return {
+        errorCode: 'api/key-not-found',
+        persistentToast: true,
+        status: {
+          phase: 'failed',
+          title: 'Brand generation is not configured for this app yet.',
+          message:
+            'The workbook draft was saved, but no model provider key is currently available to generate the result.',
+          notes,
+          ...action,
+        },
+      };
+    case 'invalid-key':
+      return {
+        errorCode: 'api/invalid-key',
+        persistentToast: true,
+        status: {
+          phase: 'failed',
+          title: 'The configured model provider rejected the API credentials.',
+          message:
+            'Generation stopped before a result was saved. The workbook draft is still intact.',
+          notes,
+          ...action,
+        },
+      };
+    case 'quota-exceeded':
+      return {
+        errorCode: 'api/quota-exceeded',
+        toastMessage: 'Generation stopped because the configured model provider has no available quota.',
+        persistentToast: true,
+        status: {
+          phase: 'failed',
+          title: 'The active model provider could not run because quota is unavailable.',
+          message:
+            'Brand Mosaic saved the latest workbook answers, but no provider in the fallback chain returned a usable result.',
+          notes,
+          ...action,
+        },
+      };
+    case 'rate-limit':
+      return {
+        errorCode: 'api/rate-limit',
+        status: {
+          phase: 'failed',
+          title: 'The model provider asked this app to slow down.',
+          message:
+            'The request reached the provider chain, but a usable result was not returned before the request was blocked.',
+          notes,
+          ...action,
+        },
+      };
+    default:
+      return {
+        errorCode: 'api/generation-failed',
+        status: {
+          phase: 'failed',
+          title: 'Brand generation stopped before the result was saved.',
+          message:
+            'The workbook draft is still safe, but the provider chain did not return a usable brand result this time.',
+          notes,
+          ...action,
+        },
+      };
+  }
+};
+
+const resolveGenerationError = (
+  error: unknown,
+  fallbackCode: string = 'api/generation-failed'
+): {
+  errorCode: string;
+  toastMessage?: string;
+  persistentToast?: boolean;
+  status: GenerationStatusNotice;
+} => {
+  if (error instanceof BrandAiRequestError) {
+    return resolveBrandAiError(error);
+  }
+
+  const message = error instanceof Error ? error.message : '';
+
+  if (
+    message.includes('API key') ||
+    message.includes('401') ||
+    message.toLowerCase().includes('unauthorized')
+  ) {
+    return {
+      errorCode: 'api/invalid-key',
+      persistentToast: true,
+      status: {
+        phase: 'failed',
+        title: 'The configured model provider rejected the API credentials.',
+        message:
+          'Generation stopped before a result was saved. The workbook draft is still intact.',
+        notes: [
+          `Check the provider chain configured for this app: ${getProviderChainLabel()}.`,
+          'If you change env vars locally, restart the dev server before trying again.',
+        ],
+      },
+    };
+  }
+
+  if (
+    message.includes('Insufficient credits') ||
+    message.includes('purchase credits') ||
+    message.includes('402')
+  ) {
+    return {
+      errorCode: 'api/quota-exceeded',
+      toastMessage: 'Generation stopped because the configured model provider has no available quota.',
+      persistentToast: true,
+      status: {
+        phase: 'failed',
+        title: 'The active model provider has no available quota.',
+        message:
+          'Brand Mosaic saved the latest workbook answers, but the provider stopped before a result could be written back.',
+        notes: [
+          `Review the configured provider chain for this app: ${getProviderChainLabel()}.`,
+          'After quota is available, return to this workbook and use [ GENERATE BRAND KIT ] again.',
+          'Nothing in the workbook was lost.',
+        ],
+      },
+    };
+  }
+
+  if (message.includes('rate limit') || message.includes('429')) {
+    return {
+      errorCode: 'api/rate-limit',
+      status: {
+        phase: 'failed',
+        title: 'The model provider asked this app to slow down.',
+        message:
+          'The request reached the provider, but it was rate-limited before a result could be returned.',
+        notes: [
+          'Wait a short moment, then retry generation from this workbook.',
+          'Your saved answers are already in place.',
+        ],
+      },
+    };
+  }
+
+  return {
+    errorCode: fallbackCode,
+    status: {
+      phase: 'failed',
+      title: 'Brand generation stopped before the result was saved.',
+      message:
+        'The workbook draft is still safe, but the provider did not return a usable brand result this time.',
+      notes: [
+        'Try the generate step again from this workbook.',
+        'If the issue repeats, verify the provider account and network connection before retrying.',
+      ],
+    },
   };
+};
 
-  useEffect(() => {
-    const uid = user ? user.id : (isLocalMode ? 'local-guest' : null);
-    if (uid && !authLoading) {
-      localStorage.setItem(`brand_projects_${uid}`, JSON.stringify(projects));
-    }
-  }, [projects, user, isLocalMode, authLoading]);
+const handleGenerationError = (
+  error: unknown,
+  showError: (
+    errorCode: string,
+    options?: { message?: string; persistent?: boolean }
+  ) => void,
+  fallbackCode: string = 'api/generation-failed'
+) => {
+  const resolution = resolveGenerationError(error, fallbackCode);
+  showError(resolution.errorCode, {
+    message: resolution.toastMessage,
+    persistent: resolution.persistentToast,
+  });
+  return resolution.status;
+};
 
-  const handleCreateNew = () => {
-    setCurrentProjectId(null);
-    setCurrentView('form');
-  };
+const DashboardRoute: React.FC = () => {
+  const { user, profile, signOut } = useAuth();
+  const navigate = useNavigate();
+  const { toasts, showError, showSuccess, removeToast } = useError();
+  const [projects, setProjects] = useState<BrandProject[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const handleSelectProject = (project: BrandProject) => {
-    setCurrentProjectId(project.id);
-    setCurrentView(project.brandKit ? 'kit' : 'form');
-  };
+  const loadDashboard = async () => {
+    if (!user) return;
 
-  const handleSaveDraft = (data: BrandFormData, exit: boolean = false) => {
-    let projectId = currentProjectId;
-    let newProjects = [...projects];
-    if (!projectId) {
-      projectId = generateId();
-      const newProject: BrandProject = { id: projectId, name: data.brandName || 'Untitled', createdAt: Date.now(), formData: data };
-      newProjects = [newProject, ...newProjects];
-      setCurrentProjectId(projectId);
-    } else {
-      newProjects = newProjects.map(p => p.id === projectId ? { ...p, formData: data, name: data.brandName || p.name } : p);
-    }
-    setProjects(newProjects);
-    if (exit) {
-      setCurrentProjectId(null);
-      setCurrentView('dashboard');
-    }
-  };
-
-  const handleSaveAndAnalyze = async (data: BrandFormData) => {
-    // Check if user can generate (has credits)
-    if (!isLocalMode && !canGenerate()) {
-      showError('payment/insufficient-credits', {
-        message: 'You have no available generations. Please purchase credits to continue.',
-      });
-      return;
-    }
-
-    setIsAnalyzing(true);
-    let projectId = currentProjectId || generateId();
-    let newProjects = [...projects];
-    if (!currentProjectId) {
-      newProjects = [{ id: projectId, name: data.brandName || 'Untitled', createdAt: Date.now(), formData: data }, ...newProjects];
-    } else {
-      newProjects = newProjects.map(p => p.id === projectId ? { ...p, formData: data, name: data.brandName || p.name } : p);
-    }
-    setProjects(newProjects);
-    setCurrentProjectId(projectId);
+    setLoading(true);
 
     try {
-      const isFree = !isLocalMode && isFreeTier();
-      const prompt = isFree ? generateLimitedPrompt(data) : generateFullPrompt(data);
-      
-      // Get API key: local mode uses localStorage, cloud mode uses env var
-      const apiKey = isLocalMode 
-        ? localStorage.getItem('user_gemini_api_key') 
-        : import.meta.env.VITE_GEMINI_API_KEY;
-      
-      if (!apiKey) {
-        throw new Error('API key not found. Please check your configuration.');
+      const nextProjects = await listProjects(user.id);
+      setProjects(nextProjects);
+    } catch (error) {
+      console.error('Failed to load projects:', error);
+      showError('db/load-failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadDashboard();
+  }, [user?.id]);
+
+  const handleCreateNew = async () => {
+    if (!user) return;
+
+    try {
+      const project = await createProject(user.id);
+      navigate(`/project/${project.id}/questions`);
+    } catch (error) {
+      console.error('Failed to create project:', error);
+      showError('db/save-failed');
+    }
+  };
+
+  const handleDuplicate = async (projectId: string) => {
+    try {
+      const newProjectId = await duplicateProject(projectId);
+      showSuccess('Workbook duplicated.');
+      await loadDashboard();
+      navigate(`/project/${newProjectId}`);
+    } catch (error) {
+      console.error('Failed to duplicate project:', error);
+      showError('db/save-failed');
+    }
+  };
+
+  const handleDelete = async (projectId: string) => {
+    const confirmed = window.confirm('Delete this workbook and all saved answers, results, and exports?');
+    if (!confirmed) return;
+
+    try {
+      await deleteProject(projectId);
+      showSuccess('Workbook deleted.');
+      await loadDashboard();
+    } catch (error) {
+      console.error('Failed to delete project:', error);
+      showError('db/delete-failed');
+    }
+  };
+
+  const handleSignOut = async () => {
+    try {
+      await signOut();
+      navigate('/auth', { replace: true });
+    } catch (error) {
+      console.error('Failed to sign out:', error);
+      showError('unknown', { message: 'Could not sign out right now. Please try again.' });
+    }
+  };
+
+  return (
+    <>
+      <ErrorToast toasts={toasts} onDismiss={removeToast} />
+      <Dashboard
+        projects={projects}
+        userEmail={user?.email}
+        userName={profile?.full_name}
+        isLoading={loading}
+        onCreateNew={handleCreateNew}
+        onOpenQuestions={(projectId) => navigate(`/project/${projectId}/questions`)}
+        onOpenResult={(projectId) => navigate(`/project/${projectId}/result`)}
+        onDuplicate={handleDuplicate}
+        onDelete={handleDelete}
+        onSignOut={handleSignOut}
+      />
+    </>
+  );
+};
+
+const ProjectIndexRoute: React.FC = () => {
+  const { projectId } = useParams();
+  const [workspace, setWorkspace] = useState<BrandProjectWorkspace | null>();
+
+  useEffect(() => {
+    if (!projectId) return;
+
+    loadProjectWorkspace(projectId)
+      .then((nextWorkspace) => setWorkspace(nextWorkspace))
+      .catch((error) => {
+        console.error('Failed to load project:', error);
+        setWorkspace(null);
+      });
+  }, [projectId]);
+
+  if (workspace === undefined) {
+    return <LoadingPage />;
+  }
+
+  if (!workspace || !projectId) {
+    return <MissingProjectState />;
+  }
+
+  if (workspace.project.status === 'generated' && workspace.latestResult) {
+    return <Navigate to={`/project/${projectId}/result`} replace />;
+  }
+
+  return <Navigate to={`/project/${projectId}/questions`} replace />;
+};
+
+const ProjectQuestionsRoute: React.FC = () => {
+  const { projectId } = useParams();
+  const { signOut } = useAuth();
+  const navigate = useNavigate();
+  const { toasts, showError, showSuccess, removeToast } = useError();
+  const [workspace, setWorkspace] = useState<BrandProjectWorkspace | null>();
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [generationStatus, setGenerationStatus] = useState<GenerationStatusNotice>(idleGenerationStatus);
+
+  const loadWorkspace = async () => {
+    if (!projectId) return;
+
+    try {
+      const nextWorkspace = await loadProjectWorkspace(projectId);
+      setWorkspace(nextWorkspace);
+      if (nextWorkspace?.project.status === 'generating' && !nextWorkspace.latestResult) {
+        setGenerationStatus(getInterruptedGenerationStatus());
+      } else {
+        setGenerationStatus(idleGenerationStatus);
       }
-      
-      const ai = new GoogleGenAI({ apiKey });
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.0-flash-exp',
-        contents: [
-          {
-            role: 'user',
-            parts: [
-              {
-                text: prompt
-              }
-            ]
-          }
-        ],
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              brandEssence: { type: Type.STRING },
-              summaryParagraph: { type: Type.STRING },
-              keywords: { type: Type.ARRAY, items: { type: Type.STRING } },
-              toneOfVoice: { type: Type.ARRAY, items: { type: Type.STRING } },
-              targetAudienceSummary: { type: Type.STRING },
-              visualDirection: { type: Type.STRING },
-              brandArchetype: { type: Type.OBJECT, properties: { name: { type: Type.STRING }, explanation: { type: Type.STRING } } },
-              suggestedTagline: { type: Type.STRING },
-              colorPaletteSuggestions: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { name: { type: Type.STRING }, hex: { type: Type.STRING }, usage: { type: Type.STRING } } } },
-              fontPairing: { type: Type.OBJECT, properties: { headlineFont: { type: Type.STRING }, bodyFont: { type: Type.STRING }, note: { type: Type.STRING } } },
-              logoPrompt: { type: Type.STRING },
+    } catch (error) {
+      console.error('Failed to load project workspace:', error);
+      showError('db/load-failed');
+      setWorkspace(null);
+      setGenerationStatus(idleGenerationStatus);
+    }
+  };
+
+  useEffect(() => {
+    loadWorkspace();
+  }, [projectId]);
+
+  if (workspace === undefined) {
+    return <LoadingPage />;
+  }
+
+  if (!workspace || !projectId) {
+    return <MissingProjectState />;
+  }
+
+  const handleSaveDraft = async (formData: BrandProjectWorkspace['formData']) => {
+    try {
+      await saveQuestionnaireAnswers(projectId, formData, { status: 'draft' });
+      setWorkspace((current) =>
+        current
+          ? {
+              ...current,
+              formData,
+              project: {
+                ...current.project,
+                brandName: getProjectBrandName(formData),
+                status: 'draft',
+              },
             }
-          }
-        }
+          : current
+      );
+    } catch (error) {
+      console.error('Failed to save questionnaire answers:', error);
+      showError('db/save-failed');
+      throw error;
+    }
+  };
+
+  const handleGenerate = async (formData: BrandProjectWorkspace['formData']) => {
+    setIsAnalyzing(true);
+    setGenerationStatus({
+      phase: 'saving',
+      title: 'Saving the latest workbook answers first.',
+      message:
+        'Brand Mosaic stores the current draft before it asks the model to synthesize the brand as a whole.',
+      notes: ['Keep this tab open until the result has been saved back to the project.'],
+    });
+
+    try {
+      await saveQuestionnaireAnswers(projectId, formData, { status: 'draft' });
+      setWorkspace((current) =>
+        current
+          ? {
+              ...current,
+              formData,
+              project: {
+                ...current.project,
+                brandName: getProjectBrandName(formData),
+                status: 'draft',
+              },
+            }
+          : current
+      );
+      await updateProjectStatus(projectId, 'generating');
+      setWorkspace((current) =>
+        current
+          ? {
+              ...current,
+              formData,
+              project: {
+                ...current.project,
+                brandName: getProjectBrandName(formData),
+                status: 'generating',
+              },
+            }
+          : current
+      );
+      setGenerationStatus({
+        phase: 'synthesizing',
+        title: 'Synthesizing the brand direction from the full answer set.',
+        message:
+          'All workbook sections are being cross-referenced before Brand Mosaic writes any result section.',
+        notes: ['This can take a moment while the model provider responds.'],
       });
 
-      if (response.text) {
-        let kit: BrandKitType = JSON.parse(response.text);
-        
-        // Preserve locked fields from previous kit
-        const existingProject = projects.find(p => p.id === projectId);
-        if (existingProject?.brandKit && existingProject.kitLocks) {
-          const locks = existingProject.kitLocks;
-          const prevKit = existingProject.brandKit;
-          
-          if (locks.brandEssence && prevKit.brandEssence) {
-            kit = { ...kit, brandEssence: prevKit.brandEssence };
-          }
-          if (locks.summaryParagraph && prevKit.summaryParagraph) {
-            kit = { ...kit, summaryParagraph: prevKit.summaryParagraph };
-          }
-          if (locks.keywords && prevKit.keywords) {
-            kit = { ...kit, keywords: prevKit.keywords };
-          }
-          if (locks.toneOfVoice && prevKit.toneOfVoice) {
-            kit = { ...kit, toneOfVoice: prevKit.toneOfVoice };
-          }
-          if (locks.brandArchetype && prevKit.brandArchetype) {
-            kit = { ...kit, brandArchetype: prevKit.brandArchetype };
-          }
-          if (locks.suggestedTagline && prevKit.suggestedTagline) {
-            kit = { ...kit, suggestedTagline: prevKit.suggestedTagline };
-          }
-          if (locks.colorPaletteSuggestions && prevKit.colorPaletteSuggestions) {
-            kit = { ...kit, colorPaletteSuggestions: prevKit.colorPaletteSuggestions };
-          }
-          if (locks.fontPairing && prevKit.fontPairing) {
-            kit = { ...kit, fontPairing: prevKit.fontPairing };
-          }
-          if (locks.logoPrompt && prevKit.logoPrompt) {
-            kit = { ...kit, logoPrompt: prevKit.logoPrompt };
-          }
-        }
-        
-        setProjects(prev => prev.map(p => p.id === projectId ? { ...p, brandKit: kit } : p));
-        
-        // Record generation (deduct credit)
-        if (!isLocalMode) {
-          await recordGeneration(projectId, 'server', 'brand_kit');
-        }
-        
-        if (isFree) {
-          showSuccess('Free trial brand kit generated! Upgrade to unlock all features.');
-        } else {
-          showSuccess('Brand kit generated successfully!');
-        }
-        
-        setCurrentView('kit');
+      const savedResult = await generateBrandKit(projectId);
+      setGenerationStatus({
+        phase: 'persisting',
+        title: 'Saving the generated brand kit to this workbook.',
+        message:
+          'The result is being stored so it can be reopened from the dashboard and result route later.',
+      });
+      await updateProjectStatus(projectId, 'generated');
+      setWorkspace((current) =>
+        current
+          ? {
+              ...current,
+              latestResult: savedResult,
+              resultHistory: [savedResult, ...current.resultHistory],
+              project: {
+                ...current.project,
+                brandName: getProjectBrandName(formData),
+                status: 'generated',
+                latestResult: savedResult,
+                resultCount: current.project.resultCount + 1,
+              },
+            }
+          : current
+      );
+      setGenerationStatus(idleGenerationStatus);
+
+      showSuccess('Brand direction generated.');
+      navigate(`/project/${projectId}/result?version=${savedResult.id}`);
+    } catch (error) {
+      console.error('Failed to generate brand result:', error);
+      try {
+        await updateProjectStatus(projectId, 'draft');
+      } catch (statusError) {
+        console.error('Failed to reset project status:', statusError);
       }
-    } catch (e: any) {
-      console.error("AI Analysis failed", e);
-      
-      if (e.message?.includes('API key')) {
-        showError('api/invalid-key');
-      } else if (e.message?.includes('rate limit') || e.message?.includes('429')) {
-        showError('api/rate-limit');
-      } else if (e.message?.includes('quota')) {
-        showError('api/quota-exceeded');
-      } else {
-        showError('api/generation-failed');
-      }
-      
-      // Use mock data as fallback
-      console.warn("Using mock data due to API failure.");
-      const mockKit: BrandKitType = {
-          "brandEssence": "EcoSip is the intersection of sustainability and smart technology, offering a refreshing, clean, and guilt-free hydration experience for the modern, eco-conscious individual.",
-          "summaryParagraph": "EcoSip represents a commitment to a cleaner planet without compromising on convenience or style. By integrating self-cleaning UV-C technology into a sleek, sustainable vessel, EcoSip empowers users to stay hydrated and healthy while actively reducing plastic waste. The brand exudes a sense of purity, innovation, and responsibility, appealing to those who value both personal health and environmental stewardship.",
-          "keywords": ["Sustainable", "Innovative", "Pure", "Minimalist", "Conscious"],
-          "toneOfVoice": ["Informative but not preachy", "Optimistic", "Clean and direct", "Empowering"],
-          "targetAudienceSummary": "Primary audience consists of health-conscious Millennials and Gen Z individuals who prioritize sustainability and tech-enabled convenience. They are active, urban-dwelling, and willing to invest in quality products that align with their values.",
-          "visualDirection": "A clean, nature-inspired aesthetic that blends organic tones (Forest Green, Clay) with modern, sanitary whites and greys. The design language should be minimal, highlighting the product's technology and eco-friendly materials.",
-          "brandArchetype": {
-            "name": "The Creator / The Caregiver",
-            "explanation": "EcoSip embodies the Creator through its innovative product design and the Caregiver through its mission to protect the planet and the user's health."
-          },
-          "suggestedTagline": "Purity in Every Sip.",
-          "colorPaletteSuggestions": [
-            { "name": "Forest Canopy", "hex": "#2E4A3D", "usage": "Primary brand color, logos, headers" },
-            { "name": "Clay Earth", "hex": "#CCA483", "usage": "Accent color, buttons, highlights" },
-            { "name": "Clean White", "hex": "#F5F5F5", "usage": "Backgrounds, white space" },
-            { "name": "Slate Tech", "hex": "#4A5568", "usage": "Text, details" }
-          ],
-          "fontPairing": {
-            "headlineFont": "Inter or Helvetica Now",
-            "bodyFont": "Roboto or Open Sans",
-            "note": "Clean, legible sans-serifs that convey modernity and simplicity."
-          },
-          "logoPrompt": "A minimalist line-art icon depicting a water drop merging with a leaf, enclosed in a circle. Clean strokes, forest green color. No text in the icon."
-      };
-      setProjects(prev => prev.map(p => p.id === projectId ? { ...p, brandKit: mockKit } : p));
-      setCurrentView('kit');
+      setWorkspace((current) =>
+        current
+          ? {
+              ...current,
+              formData,
+              project: {
+                ...current.project,
+                brandName: getProjectBrandName(formData),
+                status: 'draft',
+              },
+            }
+          : current
+      );
+      setGenerationStatus(handleGenerationError(error, showError));
     } finally {
       setIsAnalyzing(false);
     }
   };
 
-  // Compute active project: sharedProject takes precedence for anonymous viewers
-  const activeProject = sharedProject || projects.find(p => p.id === currentProjectId);
-  const isViewingShared = !!sharedProject;
-
-  // Lock toggle handler
-  const handleToggleLock = (sectionId: KitSectionId) => {
-    if (!currentProjectId) return;
-    setProjects(prev => prev.map(p => {
-      if (p.id === currentProjectId) {
-        const currentLocks = p.kitLocks || {};
-        return {
-          ...p,
-          kitLocks: {
-            ...currentLocks,
-            [sectionId]: !currentLocks[sectionId]
-          }
-        };
-      }
-      return p;
-    }));
+  const handleSignOut = async () => {
+    await signOut();
+    navigate('/auth', { replace: true });
   };
 
-  // Section regeneration handler (Brand Essence only for now)
+  return (
+    <>
+      <ErrorToast toasts={toasts} onDismiss={removeToast} />
+      <BrandFormPage
+        initialData={workspace.formData}
+        projectName={workspace.project.brandName}
+        onSaveAndAnalyze={handleGenerate}
+        onSaveDraft={handleSaveDraft}
+        onBack={() => navigate('/dashboard')}
+        onSignOut={handleSignOut}
+        isAnalyzing={isAnalyzing}
+        generationStatus={generationStatus}
+        onDismissGenerationStatus={() => setGenerationStatus(idleGenerationStatus)}
+      />
+    </>
+  );
+};
+
+const ProjectResultRoute: React.FC = () => {
+  const { projectId } = useParams();
+  const { signOut } = useAuth();
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { toasts, showError, showSuccess, removeToast } = useError();
+  const [workspace, setWorkspace] = useState<BrandProjectWorkspace | null>();
   const [isRegenerating, setIsRegenerating] = useState(false);
-  
-  const handleRegenerateSection = async (sectionId: KitSectionId) => {
-    // Only Brand Essence supported for now
-    if (sectionId !== 'brandEssence') return;
-    
-    // Check permissions
-    if (!isLocalMode && isFreeTier()) {
-      showError('payment/insufficient-credits', {
-        message: 'Section regeneration is a paid feature. Please upgrade to continue.',
-      });
-      return;
-    }
 
-    if (!activeProject?.brandKit || !activeProject.formData) {
-      showError('unknown', { message: 'No brand kit to regenerate.' });
-      return;
-    }
+  const loadWorkspace = async () => {
+    if (!projectId) return;
 
+    try {
+      const nextWorkspace = await loadProjectWorkspace(projectId);
+      setWorkspace(nextWorkspace);
+    } catch (error) {
+      console.error('Failed to load brand result:', error);
+      showError('db/load-failed');
+      setWorkspace(null);
+    }
+  };
+
+  useEffect(() => {
+    loadWorkspace();
+  }, [projectId]);
+
+  if (workspace === undefined) {
+    return <LoadingPage />;
+  }
+
+  if (!workspace || !projectId) {
+    return <MissingProjectState />;
+  }
+
+  const selectedVersionId = searchParams.get('version');
+  const activeResult =
+    workspace.resultHistory.find((result) => result.id === selectedVersionId) ||
+    workspace.latestResult;
+  const activeResultIndex = workspace.resultHistory.findIndex((result) => result.id === activeResult?.id);
+
+  if (!activeResult) {
+    return (
+      <>
+        <ErrorToast toasts={toasts} onDismiss={removeToast} />
+        <ProjectResultState
+          brandName={workspace.project.brandName}
+          status={workspace.project.status}
+          onRefresh={() => {
+            void loadWorkspace();
+          }}
+          onBackToQuestions={() => navigate(`/project/${projectId}/questions`)}
+          onBackToDashboard={() => navigate('/dashboard')}
+        />
+      </>
+    );
+  }
+
+  const handleToggleLock = async (sectionId: KitSectionId) => {
+    const nextLocks: BrandKitLocks = {
+      ...workspace.project.kitLocks,
+      [sectionId]: !workspace.project.kitLocks?.[sectionId],
+    };
+
+    try {
+      await updateProjectKitLocks(projectId, nextLocks);
+      setWorkspace((current) =>
+        current
+          ? {
+              ...current,
+              project: {
+                ...current.project,
+                kitLocks: nextLocks,
+              },
+            }
+          : current
+      );
+    } catch (error) {
+      console.error('Failed to update kit locks:', error);
+      showError('db/save-failed');
+    }
+  };
+
+  const handleRegenerateSection = async (sectionId: RegenerableKitSectionId) => {
     setIsRegenerating(true);
 
     try {
-      const apiKey = isLocalMode 
-        ? localStorage.getItem('user_gemini_api_key') 
-        : import.meta.env.VITE_GEMINI_API_KEY;
-      
-      if (!apiKey) {
-        throw new Error('API key not found.');
-      }
-
-      const prompt = `Based on this brand data: ${JSON.stringify(activeProject.formData)}
-      
-And the current brand kit context: ${JSON.stringify(activeProject.brandKit)}
-
-Generate ONLY a new brand essence (a single sentence capturing the core identity of this brand). Return JSON with only the brandEssence field.`;
-
-      const ai = new GoogleGenAI({ apiKey });
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.0-flash-exp',
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              brandEssence: { type: Type.STRING }
+      const savedResult = await regenerateBrandSection(
+        projectId,
+        activeResult.id,
+        sectionId
+      );
+      setWorkspace((current) =>
+        current
+          ? {
+              ...current,
+              latestResult: savedResult,
+              resultHistory: [
+                savedResult,
+                ...current.resultHistory.filter((result) => result.id !== savedResult.id),
+              ],
+              project: {
+                ...current.project,
+                latestResult: savedResult,
+                resultCount: current.project.resultCount + 1,
+              },
             }
-          }
-        }
-      });
-
-      if (response.text) {
-        const result = JSON.parse(response.text);
-        if (result.brandEssence) {
-          setProjects(prev => prev.map(p => {
-            if (p.id === currentProjectId && p.brandKit) {
-              return {
-                ...p,
-                brandKit: {
-                  ...p.brandKit,
-                  brandEssence: result.brandEssence
-                }
-              };
-            }
-            return p;
-          }));
-          showSuccess('Brand Essence regenerated!');
-        }
-      }
-    } catch (e: any) {
-      console.error("Section regeneration failed", e);
-      showError('api/generation-failed', { message: 'Failed to regenerate section. Please try again.' });
+          : current
+      );
+      setSearchParams({ version: savedResult.id });
+      showSuccess('A new workbook version was created from that section refinement.');
+    } catch (error) {
+      console.error('Failed to regenerate brand section:', error);
+      handleGenerationError(error, showError, 'api/generation-failed');
     } finally {
       setIsRegenerating(false);
     }
   };
 
-  if (authLoading) return <div className="brand-page" style={{ textAlign: 'center' }}>[ LOADING MOSAIC... ]</div>;
+  const handleCopyLink = async () => {
+    const url = `${window.location.origin}/project/${projectId}/result?version=${activeResult.id}`;
+
+    try {
+      await navigator.clipboard.writeText(url);
+      try {
+        await recordExport({
+          projectId,
+          brandResultId: activeResult.id,
+          exportType: 'link',
+          exportUrl: url,
+          metadata: {
+            versionId: activeResult.id,
+          },
+        });
+      } catch (exportError) {
+        console.error('Failed to record link export:', exportError);
+      }
+      showSuccess('Project link copied.');
+    } catch (error) {
+      console.error('Failed to copy project link:', error);
+      showError('unknown', { message: 'Failed to copy the result link.' });
+    }
+  };
+
+  const handleExportPdf = async () => {
+    try {
+      await openBrandKitPdfExport({
+        brandName: workspace.project.brandName,
+        formData: workspace.formData,
+        kit: activeResult.result,
+        exportedAt: new Date().toISOString(),
+        sourceModel: activeResult.sourceModel || undefined,
+        versionLabel:
+          activeResultIndex >= 0
+            ? `Workbook version ${Math.max(workspace.resultHistory.length - activeResultIndex, 1)}`
+            : undefined,
+      });
+
+      try {
+        await recordExport({
+          projectId,
+          brandResultId: activeResult.id,
+          exportType: 'pdf',
+          fileName: `${workspace.project.brandName}.pdf`,
+          metadata: {
+            versionId: activeResult.id,
+          },
+        });
+      } catch (exportError) {
+        console.error('Failed to record PDF export:', exportError);
+      }
+      showSuccess('Printable brand workbook opened.');
+    } catch (error) {
+      console.error('Failed to start PDF export:', error);
+      showError('unknown', { message: 'Could not start the PDF export right now.' });
+    }
+  };
+
+  const handleDuplicate = async () => {
+    try {
+      const newProjectId = await duplicateProject(projectId);
+      showSuccess('Workbook duplicated.');
+      navigate(`/project/${newProjectId}`);
+    } catch (error) {
+      console.error('Failed to duplicate project:', error);
+      showError('db/save-failed');
+    }
+  };
+
+  const handlePersistGeneratedLogo = async (logoUrl: string) => {
+    try {
+      const savedResult = await saveGeneratedLogo(activeResult.id, logoUrl);
+      setWorkspace((current) =>
+        current
+          ? {
+              ...current,
+              latestResult:
+                current.latestResult?.id === savedResult.id ? savedResult : current.latestResult,
+              resultHistory: current.resultHistory.map((result) =>
+                result.id === savedResult.id ? savedResult : result
+              ),
+              project: {
+                ...current.project,
+                latestResult:
+                  current.project.latestResult?.id === savedResult.id
+                    ? savedResult
+                    : current.project.latestResult,
+              },
+            }
+          : current
+      );
+    } catch (error) {
+      console.error('Failed to save generated logo:', error);
+      showError('db/save-failed');
+    }
+  };
+
+  const handleSignOut = async () => {
+    await signOut();
+    navigate('/auth', { replace: true });
+  };
 
   return (
     <>
       <ErrorToast toasts={toasts} onDismiss={removeToast} />
-      {currentView === 'home' && <HomePage onLocalStart={(path) => { localStorage.setItem('brand_local_user', 'true'); setIsLocalMode(true); loadProjectsForUser('local-guest'); setCurrentView(path === 'photo-studio' ? 'photo-studio' : 'dashboard'); }} onAuthSuccess={(path) => { intendedDestination.current = path; }} />}
-      {currentView === 'dashboard' && <Dashboard projects={projects} onCreateNew={handleCreateNew} onSelectProject={handleSelectProject} onDeleteProject={(id, e) => { e.stopPropagation(); if (confirm('Delete?')) setProjects(prev => prev.filter(p => p.id !== id)); }} onDownloadProject={(p, e) => { e.stopPropagation(); const blob = new Blob([JSON.stringify(p, null, 2)], { type: 'application/json' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `${p.name}.json`; a.click(); showSuccess('Project downloaded!'); }} onGoHome={() => setCurrentView('home')} isLocalMode={isLocalMode} onExitLocal={() => { localStorage.removeItem('brand_local_user'); setIsLocalMode(false); setCurrentView('home'); }} user={user} onOpenPhotoStudio={() => setCurrentView('photo-studio')} />}
-      {currentView === 'form' && <BrandFormPage initialData={activeProject?.formData} onSaveAndAnalyze={handleSaveAndAnalyze} onSaveDraft={handleSaveDraft} onBack={() => setCurrentView('dashboard')} onGoHome={() => setCurrentView('home')} isAnalyzing={isAnalyzing} />}
-      {currentView === 'kit' && activeProject?.brandKit && <BrandKit kit={activeProject.brandKit} formData={activeProject.formData} onEdit={() => setCurrentView('form')} onBackToDashboard={() => setCurrentView('dashboard')} onGoHome={() => setCurrentView('home')} readOnly={isViewingShared || activeProject.id.startsWith('shared-')} isFreeTier={!isLocalMode && isFreeTier()} user={user} isLocalMode={isLocalMode} projectId={isViewingShared ? null : currentProjectId} kitLocks={activeProject.kitLocks || {}} onToggleLock={handleToggleLock} onRegenerateSection={handleRegenerateSection} isRegenerating={isRegenerating} onDuplicate={handleDuplicateShared} />}
-      {currentView === 'photo-studio' && (
-        <PhotoStudioPage
-          onBackToDashboard={() => setCurrentView('dashboard')}
-          onGoHome={() => setCurrentView('home')}
-          user={user}
-          isLocalMode={isLocalMode}
-          canGenerate={canGenerate}
-          isFreeTier={isFreeTier}
-          recordGeneration={recordGeneration}
-          showError={showError}
-          showSuccess={showSuccess}
-        />
-      )}
+      <BrandKit
+        kit={activeResult.result}
+        formData={workspace.formData}
+        onEdit={() => navigate(`/project/${projectId}/questions`)}
+        onBackToDashboard={() => navigate('/dashboard')}
+        onSignOut={handleSignOut}
+        onCopyLink={handleCopyLink}
+        onExportPdf={handleExportPdf}
+        projectId={projectId}
+        kitLocks={workspace.project.kitLocks || {}}
+        onToggleLock={handleToggleLock}
+        onRegenerateSection={handleRegenerateSection}
+        isRegenerating={isRegenerating}
+        onDuplicate={handleDuplicate}
+        onPersistGeneratedLogo={handlePersistGeneratedLogo}
+        initialLogoUrl={activeResult.logoImageUrl}
+        resultHistory={workspace.resultHistory}
+        activeResultId={activeResult.id}
+        onSelectResult={(resultId) => {
+          setSearchParams({ version: resultId });
+        }}
+      />
     </>
+  );
+};
+
+const AppRoutes: React.FC = () => {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return <LoadingPage />;
+  }
+
+  return (
+    <Routes>
+      <Route path="/" element={<Navigate to={user ? '/dashboard' : '/auth'} replace />} />
+      <Route path="/auth" element={<HomePage />} />
+      <Route element={<ProtectedRoute />}>
+        <Route path="/dashboard" element={<DashboardRoute />} />
+        <Route path="/project/:projectId" element={<ProjectIndexRoute />} />
+        <Route path="/project/:projectId/questions" element={<ProjectQuestionsRoute />} />
+        <Route path="/project/:projectId/result" element={<ProjectResultRoute />} />
+      </Route>
+      <Route path="*" element={<Navigate to={user ? '/dashboard' : '/auth'} replace />} />
+    </Routes>
   );
 };
 
 const App: React.FC = () => {
   return (
     <ErrorBoundary>
-      <AppContent />
+      <AuthProvider>
+        <BrowserRouter>
+          <AppRoutes />
+        </BrowserRouter>
+      </AuthProvider>
     </ErrorBoundary>
   );
 };
