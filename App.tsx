@@ -12,6 +12,7 @@ import Dashboard from './components/Dashboard';
 import BrandFormPage from './components/BrandFormPage';
 import BrandKit from './components/BrandKit';
 import HomePage from './components/HomePage';
+import ConfirmDialog from './components/ConfirmDialog';
 import ErrorBoundary from './components/ErrorBoundary';
 import ErrorToast from './components/ErrorToast';
 import ProjectResultState from './components/ProjectResultState';
@@ -324,6 +325,8 @@ const DashboardRoute: React.FC = () => {
   const { toasts, showError, showSuccess, removeToast } = useError();
   const [projects, setProjects] = useState<BrandProject[]>([]);
   const [loading, setLoading] = useState(true);
+  const [pendingDeleteProject, setPendingDeleteProject] = useState<BrandProject | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const loadDashboard = async () => {
     if (!user) return;
@@ -369,17 +372,25 @@ const DashboardRoute: React.FC = () => {
     }
   };
 
-  const handleDelete = async (projectId: string) => {
-    const confirmed = window.confirm('Delete this workbook and all saved answers, results, and exports?');
-    if (!confirmed) return;
+  const handleDelete = (projectId: string) => {
+    const targetProject = projects.find((project) => project.id === projectId) || null;
+    setPendingDeleteProject(targetProject);
+  };
 
+  const handleConfirmDelete = async () => {
+    if (!pendingDeleteProject) return;
+
+    setIsDeleting(true);
     try {
-      await deleteProject(projectId);
+      await deleteProject(pendingDeleteProject.id);
       showSuccess('Workbook deleted.');
+      setPendingDeleteProject(null);
       await loadDashboard();
     } catch (error) {
       console.error('Failed to delete project:', error);
       showError('db/delete-failed');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -396,6 +407,25 @@ const DashboardRoute: React.FC = () => {
   return (
     <>
       <ErrorToast toasts={toasts} onDismiss={removeToast} />
+      <ConfirmDialog
+        open={Boolean(pendingDeleteProject)}
+        title="[ DELETE WORKBOOK? ]"
+        message={
+          pendingDeleteProject
+            ? `Delete "${pendingDeleteProject.brandName}" and remove its answers, saved results, and exports from this account?`
+            : ''
+        }
+        confirmLabel="[ DELETE FOR GOOD ]"
+        cancelLabel="[ KEEP WORKBOOK ]"
+        tone="danger"
+        isWorking={isDeleting}
+        onCancel={() => {
+          if (!isDeleting) {
+            setPendingDeleteProject(null);
+          }
+        }}
+        onConfirm={handleConfirmDelete}
+      />
       <Dashboard
         projects={projects}
         userEmail={user?.email}

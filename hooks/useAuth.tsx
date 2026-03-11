@@ -76,51 +76,87 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     let isMounted = true;
+    let activeUserId: string | null = null;
 
-    supabase.auth.getSession().then(async ({ data: { session: activeSession } }) => {
-      if (!isMounted) return;
-
-      setSession(activeSession);
-      setUser(activeSession?.user ?? null);
-
-      if (activeSession?.user) {
-        const synced = await upsertProfile(activeSession.user);
-        if (isMounted) {
-          setProfile(synced);
-        }
-      } else {
-        setProfile(null);
-      }
-
+    const finishLoading = () => {
       if (isMounted) {
         setLoading(false);
       }
-    });
+    };
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, nextSession) => {
+    const syncProfileForUser = async (nextUser: User | null) => {
+      if (!nextUser) {
+        if (isMounted) {
+          setProfile(null);
+        }
+        return;
+      }
+
+      try {
+        const synced = await upsertProfile(nextUser);
+        if (isMounted && activeUserId === nextUser.id) {
+          setProfile(synced);
+        }
+      } catch (error) {
+        console.error('Failed to refresh profile:', error);
+        if (isMounted && activeUserId === nextUser.id) {
+          setProfile(null);
+        }
+      }
+    };
+
+    const applySession = (nextSession: Session | null) => {
       if (!isMounted) return;
 
+      activeUserId = nextSession?.user?.id ?? null;
       setSession(nextSession);
       setUser(nextSession?.user ?? null);
 
-      if (nextSession?.user) {
-        const synced = await upsertProfile(nextSession.user);
-        if (isMounted) {
-          setProfile(synced);
-        }
-      } else {
+      if (!nextSession?.user) {
         setProfile(null);
+      } else {
+        void syncProfileForUser(nextSession.user);
       }
 
-      if (isMounted) {
-        setLoading(false);
+      finishLoading();
+    };
+
+    const bootstrapTimeout = window.setTimeout(() => {
+      console.error('Auth bootstrap timed out. Falling back to the signed-out shell.');
+      applySession(null);
+    }, 5000);
+
+    const bootstrapAuth = async () => {
+      try {
+        const {
+          data: { session: activeSession },
+          error,
+        } = await supabase.auth.getSession();
+
+        if (error) {
+          throw error;
+        }
+
+        applySession(activeSession);
+      } catch (error) {
+        console.error('Failed to restore auth session:', error);
+        applySession(null);
+      } finally {
+        window.clearTimeout(bootstrapTimeout);
       }
+    };
+
+    void bootstrapAuth();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      applySession(nextSession);
     });
 
     return () => {
       isMounted = false;
+      window.clearTimeout(bootstrapTimeout);
       subscription.unsubscribe();
     };
   }, []);

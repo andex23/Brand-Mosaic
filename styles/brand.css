@@ -1515,6 +1515,67 @@ select.brand-question-input {
   margin-bottom: 56px;
 }
 
+.confirm-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(12, 10, 8, 0.38);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  backdrop-filter: blur(8px);
+}
+
+.confirm-dialog-sheet {
+  width: min(100%, 540px);
+  border: 1px solid var(--line-strong);
+  background: var(--panel);
+  padding: 27px 24px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.12);
+}
+
+.confirm-dialog-kicker {
+  margin: 0 0 14px;
+  font-size: 11px;
+  line-height: 28px;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: var(--muted);
+}
+
+.confirm-dialog-title {
+  margin: 0;
+  font-size: 22px;
+  line-height: 28px;
+}
+
+.confirm-dialog-message {
+  margin: 14px 0 0;
+  color: var(--soft-text);
+}
+
+.confirm-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 28px;
+}
+
+.confirm-dialog-confirm {
+  min-width: 196px;
+}
+
+.confirm-dialog-confirm-danger {
+  background: var(--ink);
+  color: var(--bg);
+}
+
+.confirm-dialog-confirm-danger:hover {
+  opacity: 0.92;
+}
+
 .payment-plan-card {
   border: 2px solid var(--line);
   padding: 28px;
@@ -3821,6 +3882,15 @@ select.brand-question-input {
   .brand-form-section-header,
   .brand-summary-item {
     grid-template-columns: 1fr;
+  }
+
+  .confirm-dialog-actions {
+    flex-direction: column-reverse;
+  }
+
+  .confirm-dialog-actions .brand-edit-btn,
+  .confirm-dialog-actions .brand-submit-btn {
+    width: 100%;
   }
 
   .generation-status-header,
