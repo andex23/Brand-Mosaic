@@ -146,14 +146,6 @@ h1, h2, h3, h4, h5, h6, p, li, label, span, div {
   margin-left: auto;
 }
 
-.nav-top-spacer {
-  flex: 1 1 auto;
-}
-
-.nav-top-bar-home {
-  margin-bottom: 14px;
-}
-
 .nav-link-btn {
   background: none;
   border: none;
