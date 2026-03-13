@@ -1,5 +1,6 @@
 import React from 'react';
 import BrandHeader from './BrandHeader';
+import ThemeToggle from './ThemeToggle';
 import { BrandProject } from '../types';
 
 interface DashboardProps {
@@ -41,9 +42,12 @@ const Dashboard: React.FC<DashboardProps> = ({
     <div className="brand-page dashboard-container">
       <div className="nav-top-bar">
         <span className="nav-link-btn nav-link-static">PRIVATE WORKBOOKS</span>
-        <button onClick={onSignOut} className="nav-link-btn">
-          [ SIGN OUT ]
-        </button>
+        <div className="nav-top-actions">
+          <ThemeToggle />
+          <button onClick={onSignOut} className="nav-link-btn">
+            [ SIGN OUT ]
+          </button>
+        </div>
       </div>
 
       <BrandHeader subtitle="Your saved brand workbooks" />

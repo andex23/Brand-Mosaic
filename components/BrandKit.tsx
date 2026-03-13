@@ -12,6 +12,7 @@ import BrandSummary from './BrandSummary';
 import LogoGenerator from './LogoGenerator';
 import LogoDisplay from './LogoDisplay';
 import ErrorToast from './ErrorToast';
+import ThemeToggle from './ThemeToggle';
 import { useError } from '../hooks/useError';
 import { generateLogo } from '../lib/logoGeneration';
 
@@ -344,13 +345,16 @@ const BrandKit: React.FC<BrandKitProps> = ({
         <button onClick={onBackToDashboard} className="nav-link-btn">
           ← DASHBOARD
         </button>
-        {!readOnly ? (
-          <button onClick={onSignOut} className="nav-link-btn">
-            [ SIGN OUT ]
-          </button>
-        ) : (
-          <span className="nav-link-btn nav-link-static">RESULT VIEW</span>
-        )}
+        <div className="nav-top-actions">
+          <ThemeToggle />
+          {!readOnly ? (
+            <button onClick={onSignOut} className="nav-link-btn">
+              [ SIGN OUT ]
+            </button>
+          ) : (
+            <span className="nav-link-btn nav-link-static">RESULT VIEW</span>
+          )}
+        </div>
       </div>
 
       <BrandHeader

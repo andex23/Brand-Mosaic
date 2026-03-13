@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import BrandHeader from './BrandHeader';
 import BrandForm from './BrandForm';
 import GenerationStatusCard from './GenerationStatusCard';
+import ThemeToggle from './ThemeToggle';
 import { BrandFormData, GenerationStatusNotice } from '../types';
 import { defaultBrandFormData } from '../lib/brandWorkbook';
 
@@ -101,9 +102,12 @@ const BrandFormPage: React.FC<BrandFormPageProps> = ({
         <button onClick={onBack} className="nav-link-btn">
           ← DASHBOARD
         </button>
-        <button onClick={onSignOut} className="nav-link-btn">
-          [ SIGN OUT ]
-        </button>
+        <div className="nav-top-actions">
+          <ThemeToggle />
+          <button onClick={onSignOut} className="nav-link-btn">
+            [ SIGN OUT ]
+          </button>
+        </div>
       </div>
 
       <BrandHeader

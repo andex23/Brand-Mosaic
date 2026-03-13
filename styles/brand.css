@@ -139,6 +139,21 @@ h1, h2, h3, h4, h5, h6, p, li, label, span, div {
   width: 100%;
 }
 
+.nav-top-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+}
+
+.nav-top-spacer {
+  flex: 1 1 auto;
+}
+
+.nav-top-bar-home {
+  margin-bottom: 14px;
+}
+
 .nav-link-btn {
   background: none;
   border: none;
@@ -3694,25 +3709,22 @@ select.brand-question-input {
 }
 
 .theme-toggle-btn {
-  position: fixed;
-  top: 18px;
-  right: 18px;
-  z-index: 30;
   border: 1px solid var(--line-strong);
   background: var(--panel);
   color: var(--ink);
   font-family: "Courier Prime", monospace;
-  font-size: 11px;
-  line-height: 20px;
-  padding: 8px 12px;
-  min-height: 44px;
+  font-size: 9px;
+  line-height: 16px;
+  padding: 4px 8px;
+  min-height: 28px;
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   backdrop-filter: blur(10px);
   transition: background-color 0.2s ease, border-color 0.2s ease, opacity 0.2s ease, transform 0.2s ease;
   opacity: 0.92;
   border-radius: 999px;
+  flex: 0 0 auto;
 }
 
 .theme-toggle-btn:hover {
@@ -3720,33 +3732,29 @@ select.brand-question-input {
   background: var(--panel-soft);
 }
 
-.theme-toggle-text {
-  letter-spacing: 1.2px;
+.theme-toggle-label {
+  letter-spacing: 1.4px;
   color: var(--muted);
-  transition: color 0.2s ease, opacity 0.2s ease;
-  opacity: 0.72;
-}
-
-.theme-toggle-text.active {
-  color: var(--ink);
-  opacity: 1;
+  opacity: 0.84;
 }
 
 .theme-toggle-switch {
-  width: 44px;
-  height: 24px;
+  width: 38px;
+  height: 18px;
   border: 1px solid var(--line-strong);
   border-radius: 999px;
   background: var(--panel-soft);
   display: inline-flex;
   align-items: center;
-  padding: 2px;
+  justify-content: space-between;
+  padding: 2px 4px;
   box-sizing: border-box;
+  position: relative;
 }
 
 .theme-toggle-thumb {
-  width: 18px;
-  height: 18px;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
   background: var(--ink);
   color: var(--bg);
@@ -3755,7 +3763,10 @@ select.brand-question-input {
   justify-content: center;
   transform: translateX(0);
   transition: transform 0.2s ease, background-color 0.2s ease, color 0.2s ease;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.14);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.14);
+  position: absolute;
+  left: 2px;
+  top: 2px;
 }
 
 .theme-toggle-btn.is-dark .theme-toggle-thumb {
@@ -3763,7 +3774,14 @@ select.brand-question-input {
 }
 
 .theme-toggle-glyph {
-  font-size: 10px;
+  font-size: 8px;
+  line-height: 1;
+  color: var(--muted);
+  opacity: 0.85;
+}
+
+.theme-toggle-thumb-mark {
+  font-size: 7px;
   line-height: 1;
 }
 
@@ -4029,6 +4047,11 @@ select.brand-question-input {
     align-items: stretch;
   }
 
+  .nav-top-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
   .project-badge {
     align-self: flex-start;
   }
@@ -4064,11 +4087,8 @@ select.brand-question-input {
 }
 
 @media (max-width: 700px) {
-  .theme-toggle-btn {
-    top: 14px;
-    right: 14px;
-    padding: 7px 10px;
-    gap: 8px;
+  .theme-toggle-label {
+    display: none;
   }
 
   .confirm-dialog-actions {
@@ -4086,27 +4106,14 @@ select.brand-question-input {
     padding: 66px 14px 36px;
   }
 
-  .theme-toggle-btn {
-    top: 12px;
-    right: 12px;
-    min-height: 40px;
-    padding: 6px 9px;
-    gap: 7px;
-  }
-
-  .theme-toggle-text {
-    font-size: 10px;
-    letter-spacing: 1px;
-  }
-
   .theme-toggle-switch {
-    width: 40px;
-    height: 22px;
+    width: 36px;
+    height: 18px;
   }
 
   .theme-toggle-thumb {
-    width: 16px;
-    height: 16px;
+    width: 12px;
+    height: 12px;
   }
 
   .theme-toggle-btn.is-dark .theme-toggle-thumb {

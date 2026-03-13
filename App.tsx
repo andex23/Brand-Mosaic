@@ -17,7 +17,6 @@ import ErrorBoundary from './components/ErrorBoundary';
 import ErrorToast from './components/ErrorToast';
 import ProjectResultState from './components/ProjectResultState';
 import ProtectedRoute from './components/ProtectedRoute';
-import ThemeToggle from './components/ThemeToggle';
 import { AuthProvider, useAuth } from './hooks/useAuth';
 import { useError } from './hooks/useError';
 import { ThemeProvider } from './hooks/useTheme';
@@ -917,20 +916,17 @@ const AppRoutes: React.FC = () => {
   }
 
   return (
-    <>
-      <ThemeToggle />
-      <Routes>
-        <Route path="/" element={<HomePage />} />
-        <Route path="/auth" element={<Navigate to="/" replace />} />
-        <Route element={<ProtectedRoute />}>
-          <Route path="/dashboard" element={<DashboardRoute />} />
-          <Route path="/project/:projectId" element={<ProjectIndexRoute />} />
-          <Route path="/project/:projectId/questions" element={<ProjectQuestionsRoute />} />
-          <Route path="/project/:projectId/result" element={<ProjectResultRoute />} />
-        </Route>
-        <Route path="*" element={<Navigate to={user ? '/dashboard' : '/'} replace />} />
-      </Routes>
-    </>
+    <Routes>
+      <Route path="/" element={<HomePage />} />
+      <Route path="/auth" element={<Navigate to="/" replace />} />
+      <Route element={<ProtectedRoute />}>
+        <Route path="/dashboard" element={<DashboardRoute />} />
+        <Route path="/project/:projectId" element={<ProjectIndexRoute />} />
+        <Route path="/project/:projectId/questions" element={<ProjectQuestionsRoute />} />
+        <Route path="/project/:projectId/result" element={<ProjectResultRoute />} />
+      </Route>
+      <Route path="*" element={<Navigate to={user ? '/dashboard' : '/'} replace />} />
+    </Routes>
   );
 };
 

@@ -13,13 +13,14 @@ const ThemeToggle: React.FC = () => {
       aria-label={`Switch to ${isDark ? 'light' : 'dark'} mode`}
       aria-pressed={isDark}
     >
-      <span className={`theme-toggle-text ${!isDark ? 'active' : ''}`}>LIGHT</span>
+      <span className="theme-toggle-label">THEME</span>
       <span className="theme-toggle-switch" aria-hidden="true">
+        <span className="theme-toggle-glyph theme-toggle-glyph-light">☼</span>
         <span className="theme-toggle-thumb">
-          <span className="theme-toggle-glyph">{isDark ? '◐' : '☼'}</span>
+          <span className="theme-toggle-thumb-mark">{isDark ? '◐' : '☼'}</span>
         </span>
+        <span className="theme-toggle-glyph theme-toggle-glyph-dark">◐</span>
       </span>
-      <span className={`theme-toggle-text ${isDark ? 'active' : ''}`}>DARK</span>
     </button>
   );
 };

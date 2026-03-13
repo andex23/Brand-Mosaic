@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import BrandHeader from './BrandHeader';
 import ErrorMessage from './ErrorMessage';
+import ThemeToggle from './ThemeToggle';
 import { useAuth } from '../hooks/useAuth';
 
 const HomePage: React.FC = () => {
@@ -60,6 +61,13 @@ const HomePage: React.FC = () => {
   return (
     <div className="home-wrapper notepad-bg">
       <div className="brand-page home-container">
+        <div className="nav-top-bar nav-top-bar-home">
+          <span className="nav-top-spacer" aria-hidden="true"></span>
+          <div className="nav-top-actions">
+            <ThemeToggle />
+          </div>
+        </div>
+
         <BrandHeader subtitle="Private brand workbooks for founders and teams" />
 
         <div className="home-hero">
