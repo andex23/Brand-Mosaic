@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import BrandHeader from './BrandHeader';
 import ErrorMessage from './ErrorMessage';
+import ThemeToggle from './ThemeToggle';
 import { useAuth } from '../hooks/useAuth';
 
 const HomePage: React.FC = () => {
@@ -185,6 +186,10 @@ const HomePage: React.FC = () => {
               Supabase is not configured. Add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` to enable accounts.
             </p>
           )}
+
+          <div className="home-footer-corner">
+            <ThemeToggle className="theme-toggle-home" />
+          </div>
         </div>
       </div>
     </div>

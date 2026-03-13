@@ -1,14 +1,18 @@
 import React from 'react';
 import { useTheme } from '../hooks/useTheme';
 
-const ThemeToggle: React.FC = () => {
+interface ThemeToggleProps {
+  className?: string;
+}
+
+const ThemeToggle: React.FC<ThemeToggleProps> = ({ className = '' }) => {
   const { theme, toggleTheme } = useTheme();
   const isDark = theme === 'dark';
 
   return (
     <button
       type="button"
-      className={`theme-toggle-btn ${isDark ? 'is-dark' : 'is-light'}`}
+      className={`theme-toggle-btn ${isDark ? 'is-dark' : 'is-light'} ${className}`.trim()}
       onClick={toggleTheme}
       aria-label={`Switch to ${isDark ? 'light' : 'dark'} mode`}
       aria-pressed={isDark}
